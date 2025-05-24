@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: proxy-redis
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - proxy-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Proxy server with Redis integration
+  proxy:
+    build: .
+    container_name: proxy-stone
+    ports:
+      - '4000:4000'
+    environment:
+      # Basic configuration
+      - PORT=4000
+      - HOST=0.0.0.0
+      - API_PREFIX=/api
+      - TARGET_URL=https://httpbin.org
+
+      # Cache configuration
+      - CACHE_TTL=300
+      - CACHEABLE_METHODS=GET,POST
+      - CACHE_MAX_SIZE=10000
+      - CACHE_CLEANUP_INTERVAL=300
+
+      # Redis configuration
+      - ENABLE_REDIS=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_KEY_PREFIX=proxy:cache:
+
+      # File cache (backup)
+      - ENABLE_FILE_CACHE=true
+      - FILE_CACHE_DIR=/app/cache
+
+      # Request logging
+      - ENABLE_REQUEST_LOGGING=true
+      - REQUEST_LOG_DB_PATH=/app/logs/requests.db
+
+      # Advanced cache rules (JSON string)
+      - 'CACHE_RULES=[{"pattern":"*/users/*","ttl":600,"methods":["GET"]},{"pattern":"*/search*","ttl":300,"methods":["GET","POST"]}]'
+    volumes:
+      - cache_data:/app/cache
+      - logs_data:/app/logs
+    networks:
+      - proxy-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:4000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis Commander - Web UI for Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    ports:
+      - '8081:8081'
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - proxy-network
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
+    driver: local
+  cache_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  proxy-network:
+    driver: bridge

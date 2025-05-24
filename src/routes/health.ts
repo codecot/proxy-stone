@@ -103,4 +103,118 @@ export async function healthRoutes(fastify: FastifyInstance) {
       cleaned,
     };
   });
+
+  // Redis health endpoint
+  fastify.get('/cache/redis/health', async (request, reply) => {
+    const redisConfig = fastify.cache.getConfig().redis;
+
+    if (!redisConfig?.enabled) {
+      return {
+        status: 'disabled',
+        message: 'Redis cache is not enabled',
+      };
+    }
+
+    try {
+      const stats = await fastify.cache.getStats();
+      const redisStats = stats.redis;
+
+      if (redisStats?.connected) {
+        return {
+          status: 'healthy',
+          latency: redisStats.latency,
+          connected: true,
+          memory: redisStats.memory,
+          keys: redisStats.keys,
+          config: {
+            host: redisConfig.host,
+            port: redisConfig.port,
+            db: redisConfig.db,
+            keyPrefix: redisConfig.keyPrefix,
+          },
+        };
+      } else {
+        return {
+          status: 'unhealthy',
+          connected: false,
+          error: 'Redis connection not available',
+        };
+      }
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        connected: false,
+        error: error instanceof Error ? error.message : 'Unknown Redis error',
+      };
+    }
+  });
+
+  // Redis ping endpoint
+  fastify.get('/cache/redis/ping', async (request, reply) => {
+    const redisConfig = fastify.cache.getConfig().redis;
+
+    if (!redisConfig?.enabled) {
+      reply.status(503);
+      return {
+        success: false,
+        message: 'Redis cache is not enabled',
+      };
+    }
+
+    try {
+      const stats = await fastify.cache.getStats();
+      const redisStats = stats.redis;
+
+      if (redisStats?.connected && redisStats.latency !== undefined) {
+        return {
+          success: true,
+          latency: redisStats.latency,
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        reply.status(503);
+        return {
+          success: false,
+          message: 'Redis connection not available',
+        };
+      }
+    } catch (error) {
+      reply.status(503);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Redis ping failed',
+      };
+    }
+  });
+
+  // Clear Redis cache only
+  fastify.delete('/cache/redis', async (request, reply) => {
+    const redisConfig = fastify.cache.getConfig().redis;
+
+    if (!redisConfig?.enabled) {
+      reply.status(503);
+      return {
+        success: false,
+        message: 'Redis cache is not enabled',
+      };
+    }
+
+    try {
+      const cleared = await fastify.cache.clear();
+
+      return {
+        success: true,
+        message: `Cleared ${cleared.redis} Redis cache entries`,
+        cleared: {
+          redis: cleared.redis,
+        },
+      };
+    } catch (error) {
+      reply.status(500);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to clear Redis cache',
+      };
+    }
+  });
 }

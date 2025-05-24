@@ -3,6 +3,27 @@ import { FileCacheService, FileCacheEntry } from './file-cache.js';
 import { CacheConfig, CacheRule } from '../types/index.js';
 import { minimatch } from 'minimatch';
 
+// Redis integration (conditional import)
+let Redis: any = null;
+let redisImported = false;
+
+async function getRedis() {
+  if (!redisImported) {
+    try {
+      const IORedis = await import('ioredis');
+      Redis = IORedis.default;
+      redisImported = true;
+    } catch (error) {
+      console.warn(
+        'Redis not available:',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      redisImported = true; // Don't try again
+    }
+  }
+  return Redis;
+}
+
 export interface CacheEntry {
   data: unknown;
   headers: Record<string, string>;
@@ -21,6 +42,13 @@ export interface CacheStats {
     totalHits: number;
     totalMisses: number;
   };
+  redis?: {
+    connected: boolean;
+    keys: number;
+    memory: string;
+    latency?: number;
+    keyspace: Record<string, string>;
+  };
   file: {
     size: number;
     files: string[];
@@ -31,6 +59,8 @@ export class CacheService {
   private cache: Map<string, CacheEntry> = new Map();
   private config: CacheConfig;
   private fileCache: FileCacheService;
+  private redis: any = null;
+  private redisConnected: boolean = false;
   private cleanupTimer?: NodeJS.Timeout;
 
   // Cache statistics
@@ -45,10 +75,15 @@ export class CacheService {
   }
 
   /**
-   * Initialize the cache service (including file cache and background cleanup)
+   * Initialize the cache service (including Redis, file cache and background cleanup)
    */
   async initialize(): Promise<void> {
     await this.fileCache.initialize();
+
+    // Initialize Redis if enabled
+    if (this.config.redis?.enabled) {
+      await this.initializeRedis();
+    }
 
     // Start background cleanup if enabled
     if (this.config.behavior.backgroundCleanup) {
@@ -59,6 +94,72 @@ export class CacheService {
     if (this.config.behavior.warmupEnabled) {
       await this.warmupCache();
     }
+  }
+
+  /**
+   * Initialize Redis connection
+   */
+  private async initializeRedis(): Promise<void> {
+    if (!this.config.redis?.enabled) {
+      return;
+    }
+
+    const RedisClass = await getRedis();
+    if (!RedisClass) {
+      console.warn('Redis client not available, continuing without Redis cache');
+      return;
+    }
+
+    try {
+      this.redis = new RedisClass({
+        host: this.config.redis.host,
+        port: this.config.redis.port,
+        password: this.config.redis.password,
+        db: this.config.redis.db || 0,
+        keyPrefix: this.config.redis.keyPrefix || 'cache:',
+        connectTimeout: this.config.redis.connectTimeout || 10000,
+        lazyConnect: this.config.redis.lazyConnect !== false,
+        retryDelayOnFailover: 100,
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        maxLoadingTimeout: 5000,
+      });
+
+      // Event handlers
+      this.redis.on('connect', () => {
+        console.log('Redis cache connected');
+        this.redisConnected = true;
+      });
+
+      this.redis.on('error', (error: Error) => {
+        console.error('Redis cache error:', error.message);
+        this.redisConnected = false;
+      });
+
+      this.redis.on('close', () => {
+        console.log('Redis cache connection closed');
+        this.redisConnected = false;
+      });
+
+      this.redis.on('reconnecting', () => {
+        console.log('Redis cache reconnecting...');
+      });
+
+      // Test connection
+      await this.redis.ping();
+      console.log('Redis cache initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Redis cache:', error);
+      this.redis = null;
+      this.redisConnected = false;
+    }
+  }
+
+  /**
+   * Check if Redis is available
+   */
+  private isRedisAvailable(): boolean {
+    return this.config.redis?.enabled === true && this.redisConnected && this.redis !== null;
   }
 
   /**
@@ -313,7 +414,7 @@ export class CacheService {
   }
 
   /**
-   * Get cached data with enhanced logic
+   * Get cached data with enhanced multi-layer logic (Memory → Redis → File)
    */
   async get(
     key: string,
@@ -326,7 +427,7 @@ export class CacheService {
       return null;
     }
 
-    // Check memory cache first (fastest)
+    // 1. Check memory cache first (fastest)
     const memoryEntry = this.cache.get(key);
     if (memoryEntry && !this.isExpired(memoryEntry)) {
       this.updateAccessStats(memoryEntry);
@@ -339,7 +440,33 @@ export class CacheService {
       this.cache.delete(key);
     }
 
-    // Check file cache
+    // 2. Check Redis cache (persistent, shared across instances)
+    if (this.isRedisAvailable()) {
+      try {
+        const redisData = await this.redis.get(key);
+        if (redisData) {
+          const redisEntry: CacheEntry = JSON.parse(redisData);
+
+          // Check if expired (Redis TTL might have slight delays)
+          if (!this.isExpired(redisEntry)) {
+            // Load back into memory cache for faster access
+            this.cache.set(key, redisEntry);
+            this.evictIfNeeded();
+            this.updateAccessStats(redisEntry);
+            this.stats.hits++;
+            return redisEntry;
+          } else {
+            // Remove expired Redis entry
+            await this.redis.del(key);
+          }
+        }
+      } catch (error) {
+        console.error('Redis get error:', error);
+        // Continue to file cache on Redis error
+      }
+    }
+
+    // 3. Check file cache (backup)
     const fileEntry = await this.fileCache.get(key);
     if (fileEntry) {
       // Convert file entry to memory entry format
@@ -353,9 +480,20 @@ export class CacheService {
         lastAccessed: Date.now(),
       };
 
-      // Load back into memory cache for faster access
+      // Load into both memory and Redis for faster access
       this.cache.set(key, cacheEntry);
       this.evictIfNeeded();
+
+      // Store in Redis if available
+      if (this.isRedisAvailable()) {
+        try {
+          const serialized = JSON.stringify(cacheEntry);
+          await this.redis.setex(key, cacheEntry.ttl, serialized);
+        } catch (error) {
+          console.error('Redis warm-up set error:', error);
+        }
+      }
+
       this.stats.hits++;
       return cacheEntry;
     }
@@ -365,7 +503,7 @@ export class CacheService {
   }
 
   /**
-   * Store data in cache with rule-based TTL
+   * Store data in multi-layer cache (Memory + Redis + File) with rule-based TTL
    */
   async set(
     key: string,
@@ -418,24 +556,47 @@ export class CacheService {
       lastAccessed: Date.now(),
     };
 
-    // Store in memory cache
+    // 1. Store in memory cache (fastest access)
     this.cache.set(key, entry);
     this.evictIfNeeded();
 
-    // Store in file cache
+    // 2. Store in Redis cache (persistent, shared)
+    if (this.isRedisAvailable()) {
+      try {
+        const serialized = JSON.stringify(entry);
+        await this.redis.setex(key, ttl, serialized);
+      } catch (error) {
+        console.error('Redis set error:', error);
+        // Continue to file cache even if Redis fails
+      }
+    }
+
+    // 3. Store in file cache (backup)
     await this.fileCache.set(key, data, headers, status, ttl);
   }
 
   /**
-   * Delete cache entry from both memory and file
+   * Delete cache entry from all layers (Memory + Redis + File)
    */
   async delete(key: string): Promise<void> {
+    // Remove from memory cache
     this.cache.delete(key);
+
+    // Remove from Redis cache
+    if (this.isRedisAvailable()) {
+      try {
+        await this.redis.del(key);
+      } catch (error) {
+        console.error('Redis delete error:', error);
+      }
+    }
+
+    // Remove from file cache
     await this.fileCache.delete(key);
   }
 
   /**
-   * Get enhanced cache statistics
+   * Get enhanced cache statistics including Redis
    */
   async getStats(): Promise<CacheStats> {
     const memoryKeys = Array.from(this.cache.keys()).slice(0, 10);
@@ -444,7 +605,7 @@ export class CacheService {
     const totalRequests = this.stats.hits + this.stats.misses;
     const hitRate = totalRequests > 0 ? this.stats.hits / totalRequests : 0;
 
-    return {
+    const stats: CacheStats = {
       memory: {
         size: this.cache.size,
         keys: memoryKeys,
@@ -454,12 +615,107 @@ export class CacheService {
       },
       file: fileStats,
     };
+
+    // Add Redis statistics if available
+    if (this.isRedisAvailable()) {
+      try {
+        const info = await this.redis.info('memory');
+        const keyspace = await this.redis.info('keyspace');
+
+        // Count keys with our prefix
+        const pattern = this.config.redis?.keyPrefix ? `${this.config.redis.keyPrefix}*` : '*';
+        const keys = await this.redis.keys(pattern);
+
+        // Parse memory usage
+        const memoryMatch = info.match(/used_memory_human:(.+)/);
+        const memory = memoryMatch ? memoryMatch[1].trim() : '0B';
+
+        // Parse keyspace info
+        const keyspaceInfo: Record<string, string> = {};
+        keyspace.split('\r\n').forEach((line: string) => {
+          if (line.startsWith('db')) {
+            const [db, dbStats] = line.split(':');
+            keyspaceInfo[db] = dbStats;
+          }
+        });
+
+        // Measure Redis latency
+        const start = Date.now();
+        await this.redis.ping();
+        const latency = Date.now() - start;
+
+        stats.redis = {
+          connected: true,
+          keys: keys.length,
+          memory,
+          latency,
+          keyspace: keyspaceInfo,
+        };
+      } catch (error) {
+        console.error('Redis stats error:', error);
+        stats.redis = {
+          connected: false,
+          keys: 0,
+          memory: '0B',
+          keyspace: {},
+        };
+      }
+    } else if (this.config.redis?.enabled) {
+      stats.redis = {
+        connected: false,
+        keys: 0,
+        memory: '0B',
+        keyspace: {},
+      };
+    }
+
+    return stats;
   }
 
   /**
-   * Clean expired entries from both memory and file cache
+   * Clear all cache entries from all layers (Memory + Redis + File)
    */
-  async cleanExpired(): Promise<{ memory: number; file: number }> {
+  async clear(): Promise<{ memory: number; redis: number; file: number }> {
+    const memorySize = this.cache.size;
+    this.cache.clear();
+
+    // Reset statistics
+    this.stats.hits = 0;
+    this.stats.misses = 0;
+
+    let redisCleared = 0;
+    if (this.isRedisAvailable()) {
+      try {
+        const pattern = this.config.redis?.keyPrefix ? `${this.config.redis.keyPrefix}*` : '*';
+        const keys = await this.redis.keys(pattern);
+
+        if (keys.length > 0) {
+          // Remove prefix for deletion (ioredis adds it automatically)
+          const keysToDelete = this.config.redis?.keyPrefix
+            ? keys.map((key: string) => key.replace(this.config.redis!.keyPrefix!, ''))
+            : keys;
+
+          await this.redis.del(...keysToDelete);
+          redisCleared = keys.length;
+        }
+      } catch (error) {
+        console.error('Redis clear error:', error);
+      }
+    }
+
+    const fileCleared = await this.fileCache.clear();
+
+    return {
+      memory: memorySize,
+      redis: redisCleared,
+      file: fileCleared,
+    };
+  }
+
+  /**
+   * Clean expired entries from all cache layers
+   */
+  async cleanExpired(): Promise<{ memory: number; redis: number; file: number }> {
     let memoryCleanedCount = 0;
 
     // Clean memory cache
@@ -470,31 +726,25 @@ export class CacheService {
       }
     }
 
+    // Redis automatically handles TTL expiration, but we can clean manually if needed
+    let redisCleanedCount = 0;
+    if (this.isRedisAvailable()) {
+      try {
+        // Redis TTL handles expiration automatically, so this returns 0
+        // but we keep the interface consistent
+        redisCleanedCount = 0;
+      } catch (error) {
+        console.error('Redis clean error:', error);
+      }
+    }
+
     // Clean file cache
     const fileCleanedCount = await this.fileCache.cleanExpired();
 
     return {
       memory: memoryCleanedCount,
+      redis: redisCleanedCount,
       file: fileCleanedCount,
-    };
-  }
-
-  /**
-   * Clear all cache entries from both memory and file
-   */
-  async clear(): Promise<{ memory: number; file: number }> {
-    const memorySize = this.cache.size;
-    this.cache.clear();
-
-    // Reset statistics
-    this.stats.hits = 0;
-    this.stats.misses = 0;
-
-    const fileCleared = await this.fileCache.clear();
-
-    return {
-      memory: memorySize,
-      file: fileCleared,
     };
   }
 
@@ -520,9 +770,21 @@ export class CacheService {
   }
 
   /**
-   * Shutdown the cache service
+   * Shutdown the cache service including Redis connection
    */
   shutdown(): void {
     this.stopBackgroundCleanup();
+
+    // Close Redis connection
+    if (this.redis) {
+      try {
+        this.redis.quit();
+        this.redis = null;
+        this.redisConnected = false;
+        console.log('Redis cache connection closed');
+      } catch (error) {
+        console.error('Error closing Redis connection:', error);
+      }
+    }
   }
 }

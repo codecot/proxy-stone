@@ -48,6 +48,17 @@ export interface CacheConfig {
     maxSize?: number; // Maximum number of cache entries
     evictionPolicy?: 'lru' | 'fifo'; // Cache eviction policy when maxSize reached
   };
+  // Redis configuration
+  redis?: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    password?: string;
+    db?: number;
+    keyPrefix?: string;
+    connectTimeout?: number;
+    lazyConnect?: boolean;
+  };
 }
 
 export interface ServerConfig {

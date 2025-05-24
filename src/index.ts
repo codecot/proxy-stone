@@ -120,12 +120,14 @@ if (config.enableRequestLogging) {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   app.log.info('Shutting down gracefully...');
+  cacheService.shutdown();
   await requestLoggerService.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   app.log.info('Shutting down gracefully...');
+  cacheService.shutdown();
   await requestLoggerService.close();
   process.exit(0);
 });

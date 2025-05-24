@@ -105,6 +105,14 @@ const cliCacheCleanupInterval = getArgValue('cache-cleanup-interval');
 const cliCacheKeyHeaders = getArgValue('cache-key-headers');
 const cliEnableCacheWarmup = getBooleanFlag('enable-cache-warmup');
 
+// Redis configuration
+const cliRedisEnabled = getBooleanFlag('enable-redis');
+const cliRedisHost = getArgValue('redis-host');
+const cliRedisPort = getArgValue('redis-port');
+const cliRedisPassword = getArgValue('redis-password');
+const cliRedisDb = getArgValue('redis-db');
+const cliRedisKeyPrefix = getArgValue('redis-key-prefix');
+
 const defaultTTL = Number(cliCacheTTL || process.env.CACHE_TTL) || 300;
 const cacheableMethods = (cliCacheableMethods || process.env.CACHEABLE_METHODS || 'GET,POST')
   .split(',')
@@ -141,6 +149,17 @@ export const config: ServerConfig = {
       maxSize: Number(cliCacheMaxSize || process.env.CACHE_MAX_SIZE) || 10000,
       cleanupInterval: Number(cliCacheCleanupInterval || process.env.CACHE_CLEANUP_INTERVAL) || 600,
       warmupEnabled: cliEnableCacheWarmup || process.env.ENABLE_CACHE_WARMUP === 'true',
+    },
+    // Redis configuration
+    redis: {
+      enabled: cliRedisEnabled || process.env.ENABLE_REDIS === 'true',
+      host: cliRedisHost || process.env.REDIS_HOST || 'localhost',
+      port: Number(cliRedisPort || process.env.REDIS_PORT) || 6379,
+      password: cliRedisPassword || process.env.REDIS_PASSWORD,
+      db: Number(cliRedisDb || process.env.REDIS_DB) || 0,
+      keyPrefix: cliRedisKeyPrefix || process.env.REDIS_KEY_PREFIX || 'proxy:cache:',
+      connectTimeout: 10000,
+      lazyConnect: true,
     },
   },
   // File cache configuration
