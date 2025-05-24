@@ -20,6 +20,7 @@
     "@fastify/formbody": "^8.0.2",
     "@types/sqlite3": "^3.1.11",
     "fastify": "^5.3.2",
+    "minimatch": "^9.0.5",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {

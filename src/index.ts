@@ -31,7 +31,29 @@ const app: AppInstance = fastify({
 });
 
 // Initialize cache service with file cache support
-const cacheService = new CacheService(config.cacheTTL, config.fileCacheDir, config.enableFileCache);
+const cacheService = new CacheService(
+  config.cache || {
+    defaultTTL: config.cacheTTL,
+    methods: config.cacheableMethods,
+    rules: [],
+    keyOptions: {
+      includeHeaders: ['authorization'],
+      excludeHeaders: ['user-agent', 'accept-encoding'],
+      normalizeUrl: true,
+      hashLongKeys: true,
+      maxKeyLength: 200,
+    },
+    behavior: {
+      warmupEnabled: false,
+      backgroundCleanup: true,
+      cleanupInterval: 600,
+      maxSize: 10000,
+      evictionPolicy: 'lru',
+    },
+  },
+  config.fileCacheDir,
+  config.enableFileCache
+);
 
 // Initialize request logger service
 const requestLoggerService = new RequestLoggerService(

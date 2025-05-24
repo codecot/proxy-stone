@@ -15,13 +15,51 @@ export interface ApiResponse extends ApiRequest {
   timestamp: string;
 }
 
+// Cache rule for fine-grained TTL and behavior control
+export interface CacheRule {
+  pattern: string; // URL pattern (glob or regex)
+  methods?: string[]; // Specific methods for this rule
+  ttl?: number; // TTL in seconds for this rule
+  enabled?: boolean; // Whether caching is enabled for this rule
+  conditions?: {
+    headers?: Record<string, string>; // Required headers
+    statusCodes?: number[]; // Only cache these status codes
+    minSize?: number; // Minimum response size to cache
+    maxSize?: number; // Maximum response size to cache
+  };
+}
+
+// Cache configuration with advanced features
+export interface CacheConfig {
+  defaultTTL: number; // Default TTL for all cached items
+  methods: string[]; // Default cacheable methods
+  rules: CacheRule[]; // Fine-grained cache rules
+  keyOptions: {
+    includeHeaders?: string[]; // Additional headers to include in cache key
+    excludeHeaders?: string[]; // Headers to exclude from cache key
+    normalizeUrl?: boolean; // Normalize URL for consistent keys
+    hashLongKeys?: boolean; // Hash keys longer than specified length
+    maxKeyLength?: number; // Maximum cache key length before hashing
+  };
+  behavior: {
+    warmupEnabled?: boolean; // Enable cache warming on startup
+    backgroundCleanup?: boolean; // Enable background cleanup of expired entries
+    cleanupInterval?: number; // Cleanup interval in seconds
+    maxSize?: number; // Maximum number of cache entries
+    evictionPolicy?: 'lru' | 'fifo'; // Cache eviction policy when maxSize reached
+  };
+}
+
 export interface ServerConfig {
   port: number;
   host: string;
   apiPrefix: string;
   targetUrl: string;
+  // Legacy single TTL (kept for backwards compatibility)
   cacheTTL: number;
   cacheableMethods: string[];
+  // Advanced cache configuration
+  cache?: CacheConfig;
   // File cache options
   enableFileCache: boolean;
   fileCacheDir: string;

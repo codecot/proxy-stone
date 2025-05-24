@@ -16,18 +16,11 @@ export async function checkCacheAndServe(
 ): Promise<CacheHitResult> {
   const { method, targetUrl, headers, body } = request;
 
-  // Check if this method is cacheable
-  const isCacheable = fastify.config.cacheableMethods.includes(method);
-
-  if (!isCacheable) {
-    return { isHit: false };
-  }
-
   // Generate cache key
   const cacheKey = fastify.cache.generateKey(method, targetUrl, headers, body);
 
-  // Check cache (now async)
-  const cached = await fastify.cache.get(cacheKey);
+  // Check cache with enhanced context
+  const cached = await fastify.cache.get(cacheKey, method, targetUrl, headers);
 
   if (!cached) {
     return { isHit: false };
@@ -40,6 +33,8 @@ export async function checkCacheAndServe(
       targetUrl,
       method,
       cacheHit: true,
+      ttl: cached.ttl,
+      age: Math.floor((Date.now() - cached.createdAt) / 1000),
     },
     'Serving response from cache'
   );
@@ -49,9 +44,11 @@ export async function checkCacheAndServe(
     reply.header(key, value);
   });
 
-  // Add cache headers
+  // Add cache headers with enhanced information
   reply.header('X-Cache', 'HIT');
   reply.header('X-Cache-Method', method);
+  reply.header('X-Cache-TTL', cached.ttl.toString());
+  reply.header('X-Cache-Age', Math.floor((Date.now() - cached.createdAt) / 1000).toString());
   reply.status(cached.status);
 
   // Send cached data
@@ -61,7 +58,7 @@ export async function checkCacheAndServe(
 }
 
 /**
- * Store successful response in cache
+ * Store successful response in cache with enhanced rule-based logic
  */
 export async function storeInCache(
   fastify: FastifyInstance,
@@ -72,17 +69,17 @@ export async function storeInCache(
 ): Promise<void> {
   const { method, targetUrl, headers, body } = request;
 
-  // Check if this method is cacheable and response is successful
-  const isCacheable = fastify.config.cacheableMethods.includes(method);
-  const isSuccess = status >= 200 && status < 300;
-
-  if (!isCacheable || !isSuccess) {
-    return;
-  }
-
-  // Generate cache key and store (now async)
+  // Generate cache key and store with enhanced context
   const cacheKey = fastify.cache.generateKey(method, targetUrl, headers, body);
-  await fastify.cache.set(cacheKey, responseData, responseHeaders, status);
+  await fastify.cache.set(
+    cacheKey,
+    responseData,
+    responseHeaders,
+    status,
+    method,
+    targetUrl,
+    headers
+  );
 
   fastify.log.info(
     {
@@ -90,7 +87,8 @@ export async function storeInCache(
       targetUrl,
       method,
       responseStatus: status,
+      cached: true,
     },
-    'Cached successful response'
+    'Cached successful response with rule-based TTL'
   );
 }
