@@ -11,8 +11,12 @@ import { forwardRequest } from '../utils/http-client.js';
 import {
   setResponseHeaders,
   createErrorResponse,
+  createSpecificErrorResponse,
+  createErrorContext,
   logSuccessResponse,
   logErrorResponse,
+  categorizeError,
+  ErrorContext,
 } from '../utils/response.js';
 
 export async function apiRoutes(fastify: FastifyInstance) {
@@ -31,19 +35,32 @@ export async function apiRoutes(fastify: FastifyInstance) {
       let statusCode = 200;
       let responseData: any = null;
       let responseHeaders: Record<string, string> = {};
-
-      // Process the incoming request first to get all details
-      const processedRequest = processRequest(request, fastify.config.targetUrl);
-
-      // Generate cache key for logging and caching (available for all branches)
-      const cacheKey = fastify.cache.generateKey(
-        processedRequest.method,
-        processedRequest.targetUrl,
-        processedRequest.headers,
-        processedRequest.body
-      );
+      let processedRequest: any = null;
+      let cacheKey: string = '';
+      let errorContext: ErrorContext | null = null;
 
       try {
+        // Step 1: Process incoming request (wrapped in try/catch)
+        try {
+          processedRequest = processRequest(request, fastify.config.targetUrl);
+        } catch (error) {
+          fastify.log.error('Failed to process incoming request:', error);
+          throw new Error('Invalid request format or parameters');
+        }
+
+        // Step 2: Generate cache key (wrapped in try/catch)
+        try {
+          cacheKey = fastify.cache.generateKey(
+            processedRequest.method,
+            processedRequest.targetUrl,
+            processedRequest.headers,
+            processedRequest.body
+          );
+        } catch (error) {
+          fastify.log.warn('Failed to generate cache key, proceeding without caching:', error);
+          cacheKey = 'cache-key-generation-failed';
+        }
+
         // Log the incoming request
         fastify.log.info(
           {
@@ -62,24 +79,138 @@ export async function apiRoutes(fastify: FastifyInstance) {
           'Forwarding request to target server'
         );
 
-        // Check cache first and serve if available
-        const cacheResult = await checkCacheAndServe(fastify, processedRequest, reply);
-        if (cacheResult.served) {
-          cacheHit = true;
-          // For cache hits, we need to get response details for logging
-          statusCode = 200; // Assume cache hits are successful
-          responseData = 'CACHED_RESPONSE'; // Placeholder since response was already sent
-          responseHeaders = { 'X-Cache': 'HIT' };
+        // Step 3: Check cache first (wrapped in try/catch)
+        try {
+          const cacheResult = await checkCacheAndServe(fastify, processedRequest, reply);
+          if (cacheResult.served) {
+            cacheHit = true;
+            statusCode = 200; // Assume cache hits are successful
+            responseData = 'CACHED_RESPONSE'; // Placeholder since response was already sent
+            responseHeaders = { 'X-Cache': 'HIT' };
 
-          // Get cache TTL
+            // Get cache TTL safely
+            let cacheTTL: number | undefined;
+            try {
+              cacheTTL = fastify.cache.getTTL(
+                processedRequest.method,
+                processedRequest.targetUrl,
+                processedRequest.headers
+              );
+            } catch (error) {
+              fastify.log.warn('Failed to get cache TTL:', error);
+              cacheTTL = undefined;
+            }
+
+            // Log the request after cache hit (safe logging)
+            await safeLogRequestToDatabase(
+              fastify,
+              request,
+              processedRequest,
+              statusCode,
+              startTime,
+              cacheHit,
+              responseHeaders,
+              responseData,
+              cacheKey,
+              undefined, // errorMessage
+              cacheTTL
+            );
+            return; // Response already sent from cache
+          }
+        } catch (error) {
+          fastify.log.warn('Cache check failed, proceeding with direct request:', error);
+          // Continue with direct request if cache fails
+        }
+
+        // Step 4: Forward request to target server (main error-prone operation)
+        let httpResponse: any;
+        try {
+          httpResponse = await forwardRequest(processedRequest);
+          statusCode = httpResponse.status;
+          responseData = httpResponse.data;
+          responseHeaders = httpResponse.headers;
+        } catch (error) {
+          // Categorize the error for better handling
+          const errorType = categorizeError(error);
+          errorContext = createErrorContext(error, request, processedRequest, cacheKey);
+
+          // Log comprehensive error context
+          logErrorResponse(fastify.log, errorContext, errorType);
+
+          // Create appropriate error response
+          statusCode = 500;
+          responseData = createSpecificErrorResponse(errorType, error, request);
+
+          // Safe database logging for errors
+          await safeLogRequestToDatabase(
+            fastify,
+            request,
+            processedRequest,
+            statusCode,
+            startTime,
+            cacheHit,
+            {},
+            responseData,
+            cacheKey,
+            error instanceof Error ? error.message : 'Unknown error',
+            undefined
+          );
+
+          // Return error response with appropriate status
+          reply.status(errorType === 'timeout' ? 504 : errorType === 'network' ? 502 : 500);
+          return responseData;
+        }
+
+        // Step 5: Set response headers (wrapped in try/catch)
+        try {
+          setResponseHeaders(reply, httpResponse, processedRequest.method);
+        } catch (error) {
+          fastify.log.warn('Failed to set response headers:', error);
+          // Continue without headers if this fails
+        }
+
+        // Step 6: Store successful responses in cache (non-blocking)
+        try {
+          await storeInCache(
+            fastify,
+            processedRequest,
+            httpResponse.data,
+            httpResponse.headers,
+            httpResponse.status
+          );
+        } catch (error) {
+          fastify.log.warn('Failed to store response in cache:', error);
+          // Don't fail the request if caching fails
+        }
+
+        // Step 7: Log successful response
+        try {
+          const wasCached =
+            fastify.config.cacheableMethods.includes(processedRequest.method) &&
+            httpResponse.status >= 200 &&
+            httpResponse.status < 300;
+          logSuccessResponse(
+            fastify.log,
+            processedRequest.targetUrl,
+            processedRequest.method,
+            httpResponse.status,
+            httpResponse.headers,
+            wasCached
+          );
+        } catch (error) {
+          fastify.log.warn('Failed to log success response:', error);
+          // Continue without success logging if this fails
+        }
+
+        // Step 8: Log to database (safe operation)
+        try {
           const cacheTTL = fastify.cache.getTTL(
             processedRequest.method,
             processedRequest.targetUrl,
-            processedRequest.headers
+            processedRequest.headers,
+            httpResponse.status
           );
-
-          // Log the request after cache hit
-          await logRequestToDatabase(
+          await safeLogRequestToDatabase(
             fastify,
             request,
             processedRequest,
@@ -92,78 +223,40 @@ export async function apiRoutes(fastify: FastifyInstance) {
             undefined, // errorMessage
             cacheTTL
           );
-          return; // Response already sent from cache
+        } catch (error) {
+          fastify.log.warn('Failed to log request to database:', error);
+          // Never fail the main request due to logging issues
         }
-
-        // Forward request to target server
-        const httpResponse = await forwardRequest(processedRequest);
-        statusCode = httpResponse.status;
-        responseData = httpResponse.data;
-        responseHeaders = httpResponse.headers;
-
-        // Set response headers and status
-        setResponseHeaders(reply, httpResponse, processedRequest.method);
-
-        // Store successful responses in cache (now async)
-        await storeInCache(
-          fastify,
-          processedRequest,
-          httpResponse.data,
-          httpResponse.headers,
-          httpResponse.status
-        );
-
-        // Log successful response
-        const wasCached =
-          fastify.config.cacheableMethods.includes(processedRequest.method) &&
-          httpResponse.status >= 200 &&
-          httpResponse.status < 300;
-        logSuccessResponse(
-          fastify.log,
-          processedRequest.targetUrl,
-          processedRequest.method,
-          httpResponse.status,
-          httpResponse.headers,
-          wasCached
-        );
-
-        // Log the request to database
-        const cacheTTL = fastify.cache.getTTL(
-          processedRequest.method,
-          processedRequest.targetUrl,
-          processedRequest.headers,
-          httpResponse.status
-        );
-        await logRequestToDatabase(
-          fastify,
-          request,
-          processedRequest,
-          statusCode,
-          startTime,
-          cacheHit,
-          responseHeaders,
-          responseData,
-          cacheKey,
-          undefined, // errorMessage
-          cacheTTL
-        );
 
         return httpResponse.data;
       } catch (error) {
-        statusCode = 500;
-        responseData = createErrorResponse(error);
+        // Final catch-all error handler
+        const errorType = categorizeError(error);
 
-        // Log error
-        logErrorResponse(
-          fastify.log,
-          `${fastify.config.targetUrl}/${request.params['*']}`,
-          cacheKey,
-          request.method.toUpperCase(),
-          error
-        );
+        // Create comprehensive error context if not already created
+        if (!errorContext) {
+          errorContext = createErrorContext(error, request, processedRequest, cacheKey);
+        }
 
-        // Log the error to database
-        await logRequestToDatabase(
+        // Log comprehensive error
+        logErrorResponse(fastify.log, errorContext, errorType);
+
+        // Set appropriate status and response data
+        statusCode =
+          errorType === 'timeout'
+            ? 504
+            : errorType === 'network'
+              ? 502
+              : errorType === 'validation'
+                ? 400
+                : errorType === 'authentication'
+                  ? 401
+                  : 500;
+
+        responseData = createSpecificErrorResponse(errorType, error, request);
+
+        // Safe database logging for final catch errors
+        await safeLogRequestToDatabase(
           fastify,
           request,
           processedRequest,
@@ -174,11 +267,11 @@ export async function apiRoutes(fastify: FastifyInstance) {
           responseData,
           cacheKey,
           error instanceof Error ? error.message : 'Unknown error',
-          undefined // cacheTTL not applicable for errors
+          undefined
         );
 
         // Return error response
-        reply.status(500);
+        reply.status(statusCode);
         return responseData;
       }
     }
@@ -186,9 +279,9 @@ export async function apiRoutes(fastify: FastifyInstance) {
 }
 
 /**
- * Helper function to log request details to the database
+ * Safe database logging function that never throws errors
  */
-async function logRequestToDatabase(
+async function safeLogRequestToDatabase(
   fastify: FastifyInstance,
   request: FastifyRequest,
   processedRequest: any,
@@ -201,30 +294,58 @@ async function logRequestToDatabase(
   errorMessage?: string,
   cacheTTL?: number
 ): Promise<void> {
+  // Early return if logging is disabled
   if (!fastify.config.enableRequestLogging) return;
 
   try {
     const endTime = Date.now();
     const responseTime = endTime - startTime;
 
-    // Extract backend information
-    const { backendHost, backendPath } = extractBackendInfo(processedRequest.targetUrl);
+    // Safe backend information extraction
+    let backendHost = '';
+    let backendPath = '';
+    try {
+      if (processedRequest?.targetUrl) {
+        const backendInfo = extractBackendInfo(processedRequest.targetUrl);
+        backendHost = backendInfo.backendHost;
+        backendPath = backendInfo.backendPath;
+      }
+    } catch (error) {
+      fastify.log.warn('Failed to extract backend info for logging:', error);
+    }
 
-    // Calculate request and response sizes
-    const requestSize = calculateRequestSize(processedRequest.body, processedRequest.headers);
-    const responseSize = calculateResponseSize(responseData, responseHeaders);
+    // Safe size calculations
+    let requestSize = 0;
+    let responseSize = 0;
+    try {
+      if (processedRequest?.body && processedRequest?.headers) {
+        requestSize = calculateRequestSize(processedRequest.body, processedRequest.headers);
+      }
+      if (responseData && responseHeaders) {
+        responseSize = calculateResponseSize(responseData, responseHeaders);
+      }
+    } catch (error) {
+      fastify.log.warn('Failed to calculate request/response sizes for logging:', error);
+    }
 
-    // Extract query and route parameters
-    const queryParams = request.query as Record<string, any>;
-    const routeParams = request.params as Record<string, any>;
+    // Safe parameter extraction
+    let queryParams: Record<string, any> = {};
+    let routeParams: Record<string, any> = {};
+    try {
+      queryParams = (request.query as Record<string, any>) || {};
+      routeParams = (request.params as Record<string, any>) || {};
+    } catch (error) {
+      fastify.log.warn('Failed to extract parameters for logging:', error);
+    }
 
-    // Performance metrics (simplified - in a real implementation you'd measure these)
-    const processingTime = responseTime; // Basic processing time
+    // Performance metrics (simplified)
+    const processingTime = responseTime;
 
+    // Attempt to log to database with comprehensive error handling
     await fastify.requestLogger.logRequest({
-      method: processedRequest.method,
+      method: processedRequest?.method || request.method,
       originalUrl: request.url,
-      targetUrl: processedRequest.targetUrl,
+      targetUrl: processedRequest?.targetUrl || 'unknown',
       // Enhanced backend tracking
       backendHost,
       backendPath,
@@ -232,10 +353,9 @@ async function logRequestToDatabase(
       responseTime,
       // Enhanced performance metrics
       processingTime,
-      // Note: DNS, connect, and TTFB timing would require more advanced HTTP client instrumentation
-      requestHeaders: processedRequest.headers || {},
+      requestHeaders: processedRequest?.headers || {},
       responseHeaders: responseHeaders || {},
-      requestBody: processedRequest.body,
+      requestBody: processedRequest?.body,
       responseBody: responseData,
       // Enhanced parameter tracking
       queryParams,
@@ -249,11 +369,23 @@ async function logRequestToDatabase(
       // Enhanced request context
       requestSize,
       responseSize,
-      contentType: processedRequest.originalContentType,
-      responseContentType: responseHeaders['content-type'],
+      contentType: processedRequest?.originalContentType,
+      responseContentType: responseHeaders?.['content-type'],
     });
   } catch (error) {
-    // Don't let logging errors break the main request
-    fastify.log.error('Failed to log request to database:', error);
+    // Absolutely critical: Never let logging errors break the main request
+    // Only log the logging error itself
+    try {
+      fastify.log.error('Database logging failed completely:', {
+        error: error instanceof Error ? error.message : String(error),
+        requestUrl: request.url,
+        method: request.method,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (logError) {
+      // If even error logging fails, there's nothing more we can do
+      // This should never happen but prevents any possibility of request failure
+      console.error('Critical: Both request logging and error logging failed');
+    }
   }
 }
