@@ -280,4 +280,277 @@ export async function requestRoutes(fastify: FastifyInstance) {
       };
     }
   );
+
+  // Get requests by backend host
+  fastify.get(
+    '/requests/by-backend/:host',
+    async (request: FastifyRequest<{ Params: { host: string } }>, reply) => {
+      const logger = getRequestLogger();
+      const host = decodeURIComponent(request.params.host);
+
+      // Since we don't have backend_host filter in RequestFilters, we'll get all and filter
+      const allRequests = await logger.getRequests({ limit: 1000 });
+      const filteredRequests = allRequests.filter((req) => req.backendHost === host);
+
+      return {
+        backendHost: host,
+        requests: filteredRequests.slice(0, 100), // Limit to 100 for performance
+        count: filteredRequests.length,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  );
+
+  // Get performance analytics
+  fastify.get('/requests/analytics/performance', async (request, reply) => {
+    const logger = getRequestLogger();
+    const recentRequests = await logger.getRequests({ limit: 1000 });
+
+    // Calculate performance metrics
+    const responseTimes = recentRequests.map((r) => r.responseTime).filter((rt) => rt > 0);
+    const avgResponseTime =
+      responseTimes.length > 0
+        ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+        : 0;
+
+    const medianResponseTime =
+      responseTimes.length > 0
+        ? responseTimes.sort((a, b) => a - b)[Math.floor(responseTimes.length / 2)]
+        : 0;
+
+    const percentile95 =
+      responseTimes.length > 0
+        ? responseTimes.sort((a, b) => a - b)[Math.floor(responseTimes.length * 0.95)]
+        : 0;
+
+    // Slowest endpoints
+    const slowestRequests = recentRequests
+      .sort((a, b) => b.responseTime - a.responseTime)
+      .slice(0, 10)
+      .map((r) => ({
+        targetUrl: r.targetUrl,
+        responseTime: r.responseTime,
+        timestamp: r.timestamp,
+        method: r.method,
+      }));
+
+    // Performance by backend
+    const backendPerformance: Record<string, { count: number; avgTime: number }> = {};
+    recentRequests.forEach((req) => {
+      if (req.backendHost) {
+        if (!backendPerformance[req.backendHost]) {
+          backendPerformance[req.backendHost] = { count: 0, avgTime: 0 };
+        }
+        backendPerformance[req.backendHost].count++;
+        backendPerformance[req.backendHost].avgTime += req.responseTime;
+      }
+    });
+
+    // Calculate averages
+    Object.keys(backendPerformance).forEach((host) => {
+      const data = backendPerformance[host];
+      data.avgTime = Math.round(data.avgTime / data.count);
+    });
+
+    return {
+      summary: {
+        totalRequests: recentRequests.length,
+        avgResponseTime: Math.round(avgResponseTime),
+        medianResponseTime: Math.round(medianResponseTime),
+        percentile95ResponseTime: Math.round(percentile95),
+      },
+      slowestRequests,
+      backendPerformance,
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // Get cache analytics
+  fastify.get('/requests/analytics/cache', async (request, reply) => {
+    const logger = getRequestLogger();
+    const recentRequests = await logger.getRequests({ limit: 1000 });
+
+    const cacheHits = recentRequests.filter((r) => r.cacheHit);
+    const cacheMisses = recentRequests.filter((r) => !r.cacheHit);
+    const hitRate =
+      recentRequests.length > 0 ? (cacheHits.length / recentRequests.length) * 100 : 0;
+
+    // Cache performance by TTL
+    const ttlAnalysis: Record<string, { hits: number; misses: number; hitRate: number }> = {};
+    recentRequests.forEach((req) => {
+      const ttlKey = req.cacheTTL ? `${req.cacheTTL}s` : 'no-ttl';
+      if (!ttlAnalysis[ttlKey]) {
+        ttlAnalysis[ttlKey] = { hits: 0, misses: 0, hitRate: 0 };
+      }
+      if (req.cacheHit) {
+        ttlAnalysis[ttlKey].hits++;
+      } else {
+        ttlAnalysis[ttlKey].misses++;
+      }
+    });
+
+    // Calculate hit rates
+    Object.keys(ttlAnalysis).forEach((ttl) => {
+      const data = ttlAnalysis[ttl];
+      const total = data.hits + data.misses;
+      data.hitRate = total > 0 ? Math.round((data.hits / total) * 100) : 0;
+    });
+
+    // Most cached endpoints
+    const cachedEndpoints: Record<string, number> = {};
+    cacheHits.forEach((req) => {
+      cachedEndpoints[req.targetUrl] = (cachedEndpoints[req.targetUrl] || 0) + 1;
+    });
+
+    const topCachedEndpoints = Object.entries(cachedEndpoints)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([url, count]) => ({ url, count }));
+
+    return {
+      summary: {
+        totalRequests: recentRequests.length,
+        cacheHits: cacheHits.length,
+        cacheMisses: cacheMisses.length,
+        hitRate: Math.round(hitRate * 100) / 100,
+      },
+      ttlAnalysis,
+      topCachedEndpoints,
+      cacheTimeSavings: {
+        estimatedTimeSaved: cacheHits.reduce((total, req) => {
+          // Estimate time saved (assume cache saves 90% of response time)
+          return total + req.responseTime * 0.9;
+        }, 0),
+        requestsServedFromCache: cacheHits.length,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // Get data size analytics
+  fastify.get('/requests/analytics/data-size', async (request, reply) => {
+    const logger = getRequestLogger();
+    const recentRequests = await logger.getRequests({ limit: 1000 });
+
+    const requestsWithSize = recentRequests.filter((r) => r.requestSize && r.responseSize);
+
+    if (requestsWithSize.length === 0) {
+      return {
+        summary: { message: 'No size data available' },
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const totalRequestSize = requestsWithSize.reduce((sum, r) => sum + (r.requestSize || 0), 0);
+    const totalResponseSize = requestsWithSize.reduce((sum, r) => sum + (r.responseSize || 0), 0);
+    const avgRequestSize = totalRequestSize / requestsWithSize.length;
+    const avgResponseSize = totalResponseSize / requestsWithSize.length;
+
+    // Largest requests/responses
+    const largestRequests = requestsWithSize
+      .sort((a, b) => (b.requestSize || 0) - (a.requestSize || 0))
+      .slice(0, 10)
+      .map((r) => ({
+        url: r.targetUrl,
+        method: r.method,
+        requestSize: r.requestSize,
+        responseSize: r.responseSize,
+        timestamp: r.timestamp,
+      }));
+
+    const largestResponses = requestsWithSize
+      .sort((a, b) => (b.responseSize || 0) - (a.responseSize || 0))
+      .slice(0, 10)
+      .map((r) => ({
+        url: r.targetUrl,
+        method: r.method,
+        requestSize: r.requestSize,
+        responseSize: r.responseSize,
+        timestamp: r.timestamp,
+      }));
+
+    return {
+      summary: {
+        totalRequests: requestsWithSize.length,
+        totalRequestSize: Math.round(totalRequestSize),
+        totalResponseSize: Math.round(totalResponseSize),
+        avgRequestSize: Math.round(avgRequestSize),
+        avgResponseSize: Math.round(avgResponseSize),
+        totalDataTransfer: Math.round(totalRequestSize + totalResponseSize),
+      },
+      largestRequests,
+      largestResponses,
+      sizeDistribution: {
+        smallRequests: requestsWithSize.filter((r) => (r.requestSize || 0) < 1024).length,
+        mediumRequests: requestsWithSize.filter(
+          (r) => (r.requestSize || 0) >= 1024 && (r.requestSize || 0) < 10240
+        ).length,
+        largeRequests: requestsWithSize.filter((r) => (r.requestSize || 0) >= 10240).length,
+      },
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // Get error analytics
+  fastify.get('/requests/analytics/errors', async (request, reply) => {
+    const logger = getRequestLogger();
+    const recentRequests = await logger.getRequests({ limit: 1000 });
+
+    const errorRequests = recentRequests.filter((r) => r.statusCode >= 400);
+    const serverErrors = errorRequests.filter((r) => r.statusCode >= 500);
+    const clientErrors = errorRequests.filter((r) => r.statusCode >= 400 && r.statusCode < 500);
+
+    // Error breakdown by status code
+    const errorsByStatus: Record<number, number> = {};
+    errorRequests.forEach((req) => {
+      errorsByStatus[req.statusCode] = (errorsByStatus[req.statusCode] || 0) + 1;
+    });
+
+    // Error breakdown by backend
+    const errorsByBackend: Record<string, number> = {};
+    errorRequests.forEach((req) => {
+      if (req.backendHost) {
+        errorsByBackend[req.backendHost] = (errorsByBackend[req.backendHost] || 0) + 1;
+      }
+    });
+
+    // Most problematic endpoints
+    const errorsByEndpoint: Record<string, number> = {};
+    errorRequests.forEach((req) => {
+      errorsByEndpoint[req.targetUrl] = (errorsByEndpoint[req.targetUrl] || 0) + 1;
+    });
+
+    const topErrorEndpoints = Object.entries(errorsByEndpoint)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([url, count]) => ({ url, count }));
+
+    // Recent errors with details
+    const recentErrors = errorRequests.slice(0, 20).map((r) => ({
+      url: r.targetUrl,
+      method: r.method,
+      statusCode: r.statusCode,
+      errorMessage: r.errorMessage,
+      timestamp: r.timestamp,
+      responseTime: r.responseTime,
+    }));
+
+    return {
+      summary: {
+        totalRequests: recentRequests.length,
+        totalErrors: errorRequests.length,
+        errorRate:
+          recentRequests.length > 0
+            ? Math.round((errorRequests.length / recentRequests.length) * 100 * 100) / 100
+            : 0,
+        serverErrors: serverErrors.length,
+        clientErrors: clientErrors.length,
+      },
+      errorsByStatus,
+      errorsByBackend,
+      topErrorEndpoints,
+      recentErrors,
+      timestamp: new Date().toISOString(),
+    };
+  });
 }

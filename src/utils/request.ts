@@ -13,6 +13,77 @@ export interface WildcardRouteParams {
 }
 
 /**
+ * Extract backend host and path information from target URL
+ */
+export function extractBackendInfo(targetUrl: string): {
+  backendHost: string;
+  backendPath: string;
+} {
+  try {
+    const url = new URL(targetUrl);
+    const backendHost = `${url.protocol}//${url.host}`;
+    const backendPath = `${url.pathname}${url.search}${url.hash}`;
+
+    return {
+      backendHost,
+      backendPath,
+    };
+  } catch (error) {
+    // Fallback for invalid URLs
+    return {
+      backendHost: targetUrl.split('/').slice(0, 3).join('/') || targetUrl,
+      backendPath: targetUrl.split('/').slice(3).join('/') || '/',
+    };
+  }
+}
+
+/**
+ * Calculate request/response sizes in bytes
+ */
+export function calculateRequestSize(body: unknown, headers: Record<string, string>): number {
+  let size = 0;
+
+  // Calculate body size
+  if (body) {
+    if (typeof body === 'string') {
+      size += Buffer.byteLength(body, 'utf8');
+    } else {
+      size += Buffer.byteLength(JSON.stringify(body), 'utf8');
+    }
+  }
+
+  // Calculate headers size (approximate)
+  Object.entries(headers).forEach(([key, value]) => {
+    size += Buffer.byteLength(`${key}: ${value}\r\n`, 'utf8');
+  });
+
+  return size;
+}
+
+/**
+ * Calculate response size in bytes
+ */
+export function calculateResponseSize(data: unknown, headers: Record<string, string>): number {
+  let size = 0;
+
+  // Calculate data size
+  if (data) {
+    if (typeof data === 'string') {
+      size += Buffer.byteLength(data, 'utf8');
+    } else {
+      size += Buffer.byteLength(JSON.stringify(data), 'utf8');
+    }
+  }
+
+  // Calculate headers size (approximate)
+  Object.entries(headers).forEach(([key, value]) => {
+    size += Buffer.byteLength(`${key}: ${value}\r\n`, 'utf8');
+  });
+
+  return size;
+}
+
+/**
  * Build the target URL from the request parameters
  */
 export function buildTargetUrl(

@@ -237,6 +237,13 @@ export class CacheService {
   }
 
   /**
+   * Get TTL for a specific request based on rules (public method)
+   */
+  getTTL(method: string, url: string, headers: Record<string, string>, status?: number): number {
+    return this.getTTLForRequest(method, url, headers, status);
+  }
+
+  /**
    * Get TTL for a specific request based on rules
    */
   private getTTLForRequest(

@@ -1,5 +1,11 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { processRequest, WildcardRouteParams } from '../utils/request.js';
+import {
+  processRequest,
+  WildcardRouteParams,
+  extractBackendInfo,
+  calculateRequestSize,
+  calculateResponseSize,
+} from '../utils/request.js';
 import { checkCacheAndServe, storeInCache } from '../utils/cache.js';
 import { forwardRequest } from '../utils/http-client.js';
 import {
@@ -65,6 +71,13 @@ export async function apiRoutes(fastify: FastifyInstance) {
           responseData = 'CACHED_RESPONSE'; // Placeholder since response was already sent
           responseHeaders = { 'X-Cache': 'HIT' };
 
+          // Get cache TTL
+          const cacheTTL = fastify.cache.getTTL(
+            processedRequest.method,
+            processedRequest.targetUrl,
+            processedRequest.headers
+          );
+
           // Log the request after cache hit
           await logRequestToDatabase(
             fastify,
@@ -75,7 +88,9 @@ export async function apiRoutes(fastify: FastifyInstance) {
             cacheHit,
             responseHeaders,
             responseData,
-            cacheKey
+            cacheKey,
+            undefined, // errorMessage
+            cacheTTL
           );
           return; // Response already sent from cache
         }
@@ -113,6 +128,12 @@ export async function apiRoutes(fastify: FastifyInstance) {
         );
 
         // Log the request to database
+        const cacheTTL = fastify.cache.getTTL(
+          processedRequest.method,
+          processedRequest.targetUrl,
+          processedRequest.headers,
+          httpResponse.status
+        );
         await logRequestToDatabase(
           fastify,
           request,
@@ -122,7 +143,9 @@ export async function apiRoutes(fastify: FastifyInstance) {
           cacheHit,
           responseHeaders,
           responseData,
-          cacheKey
+          cacheKey,
+          undefined, // errorMessage
+          cacheTTL
         );
 
         return httpResponse.data;
@@ -150,7 +173,8 @@ export async function apiRoutes(fastify: FastifyInstance) {
           {},
           responseData,
           cacheKey,
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : 'Unknown error',
+          undefined // cacheTTL not applicable for errors
         );
 
         // Return error response
@@ -174,28 +198,59 @@ async function logRequestToDatabase(
   responseHeaders: Record<string, string>,
   responseData: any,
   cacheKey?: string,
-  errorMessage?: string
+  errorMessage?: string,
+  cacheTTL?: number
 ): Promise<void> {
   if (!fastify.config.enableRequestLogging) return;
 
   try {
-    const responseTime = Date.now() - startTime;
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+
+    // Extract backend information
+    const { backendHost, backendPath } = extractBackendInfo(processedRequest.targetUrl);
+
+    // Calculate request and response sizes
+    const requestSize = calculateRequestSize(processedRequest.body, processedRequest.headers);
+    const responseSize = calculateResponseSize(responseData, responseHeaders);
+
+    // Extract query and route parameters
+    const queryParams = request.query as Record<string, any>;
+    const routeParams = request.params as Record<string, any>;
+
+    // Performance metrics (simplified - in a real implementation you'd measure these)
+    const processingTime = responseTime; // Basic processing time
 
     await fastify.requestLogger.logRequest({
       method: processedRequest.method,
       originalUrl: request.url,
       targetUrl: processedRequest.targetUrl,
+      // Enhanced backend tracking
+      backendHost,
+      backendPath,
       statusCode,
       responseTime,
+      // Enhanced performance metrics
+      processingTime,
+      // Note: DNS, connect, and TTFB timing would require more advanced HTTP client instrumentation
       requestHeaders: processedRequest.headers || {},
       responseHeaders: responseHeaders || {},
       requestBody: processedRequest.body,
       responseBody: responseData,
+      // Enhanced parameter tracking
+      queryParams,
+      routeParams,
       cacheHit,
       cacheKey,
+      cacheTTL,
       userAgent: request.headers['user-agent'],
       clientIp: request.ip || request.socket?.remoteAddress,
       errorMessage,
+      // Enhanced request context
+      requestSize,
+      responseSize,
+      contentType: processedRequest.originalContentType,
+      responseContentType: responseHeaders['content-type'],
     });
   } catch (error) {
     // Don't let logging errors break the main request
