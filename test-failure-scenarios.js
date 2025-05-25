@@ -79,7 +79,7 @@ const testScenario = async (name, description, command, expectedBehavior) => {
     // Test proxy functionality
     console.log('🔍 Testing proxy functionality...');
     try {
-      const proxyResponse = await fetch(`http://localhost:${port}/api/get`);
+      const proxyResponse = await fetch(`http://localhost:${port}/proxy/get`);
       testResult.proxyWorking = proxyResponse.ok;
 
       if (proxyResponse.ok) {

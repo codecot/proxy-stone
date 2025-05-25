@@ -118,10 +118,10 @@ npm run dev -- --enable-file-cache --cache-ttl 60
 
 ```bash
 # First request (cache miss)
-curl http://localhost:3000/api/get
+curl http://localhost:3000/proxy/get
 
 # Second request (cache hit from memory)
-curl http://localhost:3000/api/get
+curl http://localhost:3000/proxy/get
 ```
 
 ### 3. Check Cache Status

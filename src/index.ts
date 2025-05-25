@@ -1,10 +1,12 @@
 import fastify from 'fastify';
 import { config } from './config/index.js';
 import { corsPlugin } from './plugins/cors.js';
+import { authPlugin } from './plugins/auth.js';
 import { apiRoutes } from './routes/api.js';
 import { healthRoutes } from './routes/health.js';
 import { requestRoutes } from './routes/requests.js';
 import { cacheRoutes } from './routes/cache.js';
+import { authRoutes } from './routes/auth.js';
 import { AppInstance } from './types/index.js';
 import { formBodyPlugin } from './plugins/formbody.js';
 import { CacheService } from './services/cache.js';
@@ -100,16 +102,24 @@ if (config.database?.type === 'sqlite' || !config.database) {
   app.log.info(`Database host: ${config.database.host}:${config.database.port}`);
   app.log.info(`Database name: ${config.database.database}`);
 }
+app.log.info(`Authentication enabled: ${config.auth?.enabled || false}`);
+if (config.auth?.enabled) {
+  app.log.info(`API keys configured: ${config.auth.apiKeys.length}`);
+  app.log.info(`Protected paths: ${config.auth.protectedPaths.join(', ')}`);
+  app.log.info(`JWT support: ${config.auth.jwt ? 'enabled' : 'disabled'}`);
+}
 
 // Register plugins
 await app.register(corsPlugin);
+await app.register(authPlugin);
 await formBodyPlugin(app);
 
 // Register routes
 await app.register(healthRoutes);
 await app.register(apiRoutes);
-await app.register(requestRoutes); // Add request management routes
-await app.register(cacheRoutes); // Add cache management routes
+await app.register(requestRoutes, { prefix: '/api' }); // Add request management routes
+await app.register(cacheRoutes, { prefix: '/api' }); // Add cache management routes
+await app.register(authRoutes, { prefix: '/api' }); // Add auth management routes
 
 // Clean expired cache entries every 10 minutes
 setInterval(

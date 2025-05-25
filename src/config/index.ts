@@ -1,4 +1,4 @@
-import { ServerConfig, CacheConfig, CacheRule } from '../types/index.js';
+import { ServerConfig, CacheConfig, CacheRule, AuthConfig, Role, ApiKey } from '../types/index.js';
 import { DatabaseConfig, DatabaseDialect, DatabaseFactory } from '../database/index.js';
 
 // Helper function to parse command line arguments (gets the LAST occurrence to allow overriding)
@@ -137,6 +137,28 @@ const createDefaultCacheConfig = (
   };
 };
 
+// Helper function to parse API keys from JSON string
+const parseApiKeys = (apiKeysJson?: string): ApiKey[] => {
+  if (!apiKeysJson) return [];
+
+  try {
+    const keys = JSON.parse(apiKeysJson);
+    return Array.isArray(keys) ? keys : [];
+  } catch (error) {
+    console.warn('Invalid API keys JSON, using defaults:', error);
+    return [];
+  }
+};
+
+// Helper function to create default auth configuration
+const createDefaultAuthConfig = (): AuthConfig => {
+  return {
+    enabled: false, // Disabled by default
+    apiKeys: [], // No default API keys
+    protectedPaths: ['/api/cache*', '/api/metrics*', '/api/requests*', '/api/snapshots*'], // Default protected paths
+  };
+};
+
 const cliPort = getArgValue('port');
 const cliHost = getArgValue('host');
 const cliApiPrefix = getArgValue('api-prefix');
@@ -164,6 +186,12 @@ const cliRedisPassword = getArgValue('redis-password');
 const cliRedisDb = getArgValue('redis-db');
 const cliRedisKeyPrefix = getArgValue('redis-key-prefix');
 
+// Auth configuration
+const cliAuthEnabled = getBooleanFlag('enable-auth');
+const cliApiKeys = getArgValue('api-keys');
+const cliJwtSecret = getArgValue('jwt-secret');
+const cliAuthProtectedPaths = getArgValue('auth-protected-paths');
+
 // Database configuration
 const databaseConfig = createDatabaseConfig();
 
@@ -181,10 +209,19 @@ const additionalKeyHeaders = (cliCacheKeyHeaders || process.env.CACHE_KEY_HEADER
   .map((header) => header.trim().toLowerCase())
   .filter(Boolean);
 
+// Parse API keys
+const apiKeys = parseApiKeys(cliApiKeys || process.env.API_KEYS);
+
+// Parse protected paths
+const protectedPaths = (cliAuthProtectedPaths || process.env.AUTH_PROTECTED_PATHS || '')
+  .split(',')
+  .map((path) => path.trim())
+  .filter(Boolean);
+
 export const config: ServerConfig = {
   port: Number(cliPort || process.env.PORT) || 3000,
   host: cliHost || process.env.HOST || '0.0.0.0',
-  apiPrefix: cliApiPrefix || process.env.API_PREFIX || '/api',
+  apiPrefix: cliApiPrefix || process.env.API_PREFIX || '/proxy',
   targetUrl: cliTargetUrl || process.env.TARGET_URL || 'https://httpbin.org',
   cacheTTL: defaultTTL, // Legacy support
   cacheableMethods: cacheableMethods, // Legacy support
@@ -226,4 +263,20 @@ export const config: ServerConfig = {
   snapshotDbPath: cliSnapshotDbPath || process.env.SNAPSHOT_DB_PATH || './logs/snapshots.db',
   // Multi-database configuration
   database: databaseConfig,
+  // Auth configuration
+  auth: {
+    ...createDefaultAuthConfig(),
+    enabled: cliAuthEnabled || process.env.ENABLE_AUTH === 'true',
+    apiKeys: apiKeys.length > 0 ? apiKeys : createDefaultAuthConfig().apiKeys,
+    protectedPaths:
+      protectedPaths.length > 0 ? protectedPaths : createDefaultAuthConfig().protectedPaths,
+    jwt:
+      cliJwtSecret || process.env.JWT_SECRET
+        ? {
+            secret: cliJwtSecret || process.env.JWT_SECRET!,
+            issuer: process.env.JWT_ISSUER || 'proxy-stone',
+            expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+          }
+        : undefined,
+  },
 };

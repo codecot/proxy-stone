@@ -87,11 +87,11 @@ The cache isolates responses per user using the `Authorization` header:
 ```bash
 # User A's request
 curl -H "Authorization: Bearer user-a-token" \
-  http://localhost:4000/api/profile
+  http://localhost:4000/proxy/profile
 
 # User B's request (separate cache entry)
 curl -H "Authorization: Bearer user-b-token" \
-  http://localhost:4000/api/profile
+  http://localhost:4000/proxy/profile
 ```
 
 This ensures users never see each other's data, even for the same endpoint.
@@ -315,7 +315,7 @@ Improve cache effectiveness:
 3. **Monitor cache headers**
    ```bash
    # Check cache hit rate
-   curl -v http://localhost:4000/api/users | grep X-Cache
+   curl -v http://localhost:4000/proxy/users | grep X-Cache
    ```
 
 ## Automatic Cleanup
@@ -375,13 +375,13 @@ Run multiple instances for different caching strategies:
 # Fast-changing user data
 npm run dev -- \
   --port 4001 \
-  --api-prefix /api/user \
+  --api-prefix /proxy/user \
   --cache-ttl 60
 
 # Slow-changing reference data
 npm run dev -- \
   --port 4002 \
-  --api-prefix /api/ref \
+  --api-prefix /proxy/ref \
   --cache-ttl 3600
 ```
 

@@ -214,7 +214,7 @@ npm run dev -- --port 4001 --target-url https://httpbin.org
 
 # Run integration tests
 curl http://localhost:4001/health
-curl http://localhost:4001/api/get
+curl http://localhost:4001/proxy/get
 ```
 
 ## Development Workflow
@@ -229,7 +229,7 @@ git checkout -b feature/new-feature
 npm run dev  # Start development server
 
 # Test changes
-curl http://localhost:4000/api/test
+curl http://localhost:4000/proxy/test
 
 # Check code quality
 npm run lint

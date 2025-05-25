@@ -51,18 +51,18 @@ By default, the service forwards requests to `https://httpbin.org`:
 
 ```bash
 # GET request
-curl http://localhost:4000/api/get
+curl http://localhost:4000/proxy/get
 
 # POST request with JSON
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"name":"test","value":"123"}' \
-  http://localhost:4000/api/post
+  http://localhost:4000/proxy/post
 
 # POST request with form data
 curl -X POST \
   -d "key1=value1&key2=value2" \
-  http://localhost:4000/api/post
+  http://localhost:4000/proxy/post
 ```
 
 ### 3. Observe Caching
@@ -71,11 +71,11 @@ Make the same GET request twice to see caching in action:
 
 ```bash
 # First request (cache miss)
-curl -v http://localhost:4000/api/get
+curl -v http://localhost:4000/proxy/get
 # Look for: X-Cache: MISS
 
 # Second request (cache hit)
-curl -v http://localhost:4000/api/get
+curl -v http://localhost:4000/proxy/get
 # Look for: X-Cache: HIT
 ```
 
@@ -88,8 +88,8 @@ curl -v http://localhost:4000/api/get
 npm run dev -- --target-url https://jsonplaceholder.typicode.com
 
 # Test it
-curl http://localhost:4000/api/users
-curl http://localhost:4000/api/posts/1
+curl http://localhost:4000/proxy/users
+curl http://localhost:4000/proxy/posts/1
 ```
 
 ### Custom Port and Host
@@ -144,19 +144,19 @@ npm start -- --port 3000 --target-url https://api.production.com
 ### View Cache Stats
 
 ```bash
-curl http://localhost:4000/cache/stats
+curl http://localhost:4000/api/cache/stats
 ```
 
 ### Clear Cache
 
 ```bash
-curl -X DELETE http://localhost:4000/cache
+curl -X DELETE http://localhost:4000/api/cache
 ```
 
 ### Clean Expired Entries
 
 ```bash
-curl -X POST http://localhost:4000/cache/clean
+curl -X POST http://localhost:4000/api/cache/clean
 ```
 
 ## Common Use Cases

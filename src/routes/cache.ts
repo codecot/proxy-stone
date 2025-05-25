@@ -3,6 +3,7 @@ import { SnapshotFilters } from '../services/snapshot-manager.js';
 import { forwardRequest } from '../utils/http-client.js';
 import { processRequest } from '../utils/request.js';
 import { createErrorResponse } from '../utils/response.js';
+import { requireReadAccess, requireAdmin } from '../plugins/auth.js';
 
 interface CacheKeyParams {
   key: string;
@@ -74,9 +75,10 @@ export async function cacheRoutes(fastify: FastifyInstance) {
   // ========================================
 
   // GET /cache/entries - List all active cache entries
-  fastify.get(
+  fastify.get<{ Querystring: SnapshotQuery }>(
     '/cache/entries',
-    async (request: FastifyRequest<{ Querystring: SnapshotQuery }>, reply) => {
+    { preHandler: requireReadAccess() },
+    async (request, reply) => {
       try {
         const snapshotManager = getSnapshotManager();
 
@@ -160,9 +162,10 @@ export async function cacheRoutes(fastify: FastifyInstance) {
   );
 
   // GET /cache/entry/:key - Return cached response + metadata
-  fastify.get(
+  fastify.get<{ Params: CacheKeyParams }>(
     '/cache/entry/:key',
-    async (request: FastifyRequest<{ Params: CacheKeyParams }>, reply) => {
+    { preHandler: requireReadAccess() },
+    async (request, reply) => {
       try {
         const cacheKey = decodeURIComponent(request.params.key);
         const snapshotManager = getSnapshotManager();

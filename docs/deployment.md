@@ -27,7 +27,7 @@ NODE_ENV=production
 PORT=3000
 HOST=0.0.0.0
 TARGET_URL=https://api.production.com
-API_PREFIX=/api
+API_PREFIX=/proxy
 CACHE_TTL=600
 CACHEABLE_METHODS=GET,POST
 ```
@@ -199,7 +199,7 @@ metadata:
   name: bff-proxy-config
 data:
   TARGET_URL: 'https://api.production.com'
-  API_PREFIX: '/api'
+      API_PREFIX: '/proxy'
   CACHE_TTL: '600'
   CACHEABLE_METHODS: 'GET,POST'
 ---
@@ -431,7 +431,7 @@ Add rate limiting with reverse proxy:
 limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
 
 server {
-    location /api {
+    location /proxy {
         limit_req zone=api burst=20 nodelay;
         proxy_pass http://bff_proxy;
     }
@@ -506,7 +506,7 @@ spec:
    curl http://localhost:3000/cache/stats
 
    # Check response times
-   curl -w "@curl-format.txt" http://localhost:3000/api/test
+   curl -w "@curl-format.txt" http://localhost:3000/proxy/test
    ```
 
 ### Debugging

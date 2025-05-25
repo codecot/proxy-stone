@@ -63,6 +63,31 @@ export interface CacheConfig {
   };
 }
 
+// Auth configuration types
+export enum Role {
+  ADMIN = 'admin',
+  READ_ONLY = 'readonly',
+  USER = 'user',
+}
+
+export interface ApiKey {
+  key: string;
+  role: Role;
+  name?: string;
+  enabled?: boolean;
+}
+
+export interface AuthConfig {
+  enabled: boolean;
+  apiKeys: ApiKey[];
+  jwt?: {
+    secret: string;
+    issuer?: string;
+    expiresIn?: string;
+  };
+  protectedPaths: string[]; // Paths that require auth when enabled
+}
+
 export interface ServerConfig {
   port: number;
   host: string;
@@ -83,6 +108,8 @@ export interface ServerConfig {
   snapshotDbPath: string;
   // Multi-database configuration
   database?: DatabaseConfig;
+  // Auth configuration
+  auth?: AuthConfig;
 }
 
 // Extend FastifyInstance to include the decorated config property

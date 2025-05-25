@@ -16,7 +16,7 @@ The service supports three configuration methods in order of precedence:
 | ----------------- | --------------------- | -------------------- | --------------------- | ----------------------------- |
 | Port              | `--port`              | `PORT`               | `3000`                | Server listening port         |
 | Host              | `--host`              | `HOST`               | `0.0.0.0`             | Server listening host         |
-| API Prefix        | `--api-prefix`        | `API_PREFIX`         | `/api`                | Prefix for proxied routes     |
+| API Prefix        | `--api-prefix`        | `API_PREFIX`         | `/proxy`              | Prefix for proxied routes     |
 | Target URL        | `--target-url`        | `TARGET_URL`         | `https://httpbin.org` | Backend API server URL        |
 | Cache TTL         | `--cache-ttl`         | `CACHE_TTL`          | `300`                 | Cache time-to-live in seconds |
 | Cacheable Methods | `--cacheable-methods` | `CACHEABLE_METHODS`  | `GET,POST`            | HTTP methods to cache         |
@@ -55,7 +55,7 @@ npm run dev -- --host 0.0.0.0 --port 3000
 npm run dev -- --target-url https://api.example.com
 
 # Custom API prefix
-npm run dev -- --api-prefix /v1/api
+npm run dev -- --api-prefix /v1/proxy
 
 # Multiple configuration
 npm run dev -- \
@@ -141,7 +141,7 @@ PORT=4000
 HOST=127.0.0.1
 
 # API Configuration
-API_PREFIX=/api/v1
+API_PREFIX=/proxy/v1
 TARGET_URL=https://api.example.com
 
 # Cache Configuration
@@ -170,7 +170,7 @@ export NODE_ENV=production
 export PORT=3000
 export HOST=0.0.0.0
 export TARGET_URL=https://api.production.com
-export API_PREFIX=/api
+export API_PREFIX=/proxy
 export CACHE_TTL=600
 export CACHEABLE_METHODS=GET,POST
 
@@ -264,7 +264,7 @@ Route to different backend versions:
 ```bash
 npm run dev -- \
   --port 4000 \
-  --api-prefix /api/v1 \
+  --api-prefix /proxy/v1 \
   --target-url https://api-v1.example.com
 ```
 
@@ -273,7 +273,7 @@ npm run dev -- \
 ```bash
 npm run dev -- \
   --port 4001 \
-  --api-prefix /api/v2 \
+  --api-prefix /proxy/v2 \
   --target-url https://api-v2.example.com
 ```
 

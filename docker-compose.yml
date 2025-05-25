@@ -28,7 +28,7 @@ services:
       # Basic configuration
       - PORT=4000
       - HOST=0.0.0.0
-      - API_PREFIX=/api
+      - API_PREFIX=/proxy
       - TARGET_URL=https://httpbin.org
 
       # Cache configuration

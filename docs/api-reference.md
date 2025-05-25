@@ -9,7 +9,16 @@ By default, the service runs on:
 - **Development**: `http://localhost:4000`
 - **Production**: Configured via `--port` and `--host`
 
-## Service Endpoints
+## Endpoint Types
+
+The service provides two types of endpoints:
+
+1. **Service Management Endpoints** (`/api/*`) - For managing the proxy service itself
+2. **Proxy Endpoints** (`/proxy/*`) - For forwarding requests to target servers
+
+## Service Management Endpoints
+
+These endpoints manage the proxy service itself and are protected by authentication when enabled.
 
 ### Health Check
 
@@ -42,7 +51,7 @@ curl http://localhost:4000/health
 
 Get detailed cache statistics.
 
-**Endpoint:** `GET /cache/stats`
+**Endpoint:** `GET /api/cache/stats`
 
 **Response:**
 
@@ -60,14 +69,14 @@ Get detailed cache statistics.
 **Example:**
 
 ```bash
-curl http://localhost:4000/cache/stats
+curl http://localhost:4000/api/cache/stats
 ```
 
 ### Clear Cache
 
 Clear all cached entries.
 
-**Endpoint:** `DELETE /cache`
+**Endpoint:** `DELETE /api/cache`
 
 **Response:**
 
@@ -80,14 +89,14 @@ Clear all cached entries.
 **Example:**
 
 ```bash
-curl -X DELETE http://localhost:4000/cache
+curl -X DELETE http://localhost:4000/api/cache
 ```
 
 ### Clean Expired Entries
 
 Remove expired cache entries manually.
 
-**Endpoint:** `POST /cache/clean`
+**Endpoint:** `POST /api/cache/clean`
 
 **Response:**
 
@@ -100,7 +109,7 @@ Remove expired cache entries manually.
 **Example:**
 
 ```bash
-curl -X POST http://localhost:4000/cache/clean
+curl -X POST http://localhost:4000/api/cache/clean
 ```
 
 ## Proxy Endpoints
@@ -111,7 +120,7 @@ Forward requests to the configured target server.
 
 **Endpoint:** `ANY {apiPrefix}/*`
 
-**Default API Prefix:** `/api`
+**Default API Prefix:** `/proxy`
 
 **Supported Methods:** GET, POST, PUT, DELETE, PATCH, HEAD
 
@@ -126,7 +135,7 @@ Forward requests to the configured target server.
 **Example:**
 
 ```bash
-curl http://localhost:4000/api/get
+curl http://localhost:4000/proxy/get
 ```
 
 **Response Headers:**
@@ -145,7 +154,7 @@ Content-Type: application/json
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"name":"test","value":"123"}' \
-  http://localhost:4000/api/post
+  http://localhost:4000/proxy/post
 ```
 
 #### POST Request with Form Data
@@ -155,7 +164,7 @@ curl -X POST \
 ```bash
 curl -X POST \
   -d "key1=value1&key2=value2" \
-  http://localhost:4000/api/post
+  http://localhost:4000/proxy/post
 ```
 
 #### PUT Request
@@ -166,7 +175,7 @@ curl -X POST \
 curl -X PUT \
   -H "Content-Type: application/json" \
   -d '{"id":1,"name":"updated"}' \
-  http://localhost:4000/api/users/1
+  http://localhost:4000/proxy/users/1
 ```
 
 #### DELETE Request
@@ -174,7 +183,7 @@ curl -X PUT \
 **Example:**
 
 ```bash
-curl -X DELETE http://localhost:4000/api/users/1
+curl -X DELETE http://localhost:4000/proxy/users/1
 ```
 
 ### Query Parameters
@@ -184,7 +193,7 @@ Query parameters are forwarded to the target server:
 **Example:**
 
 ```bash
-curl "http://localhost:4000/api/search?q=nodejs&limit=10"
+curl "http://localhost:4000/proxy/search?q=nodejs&limit=10"
 ```
 
 This forwards to: `{targetUrl}/search?q=nodejs&limit=10`
@@ -197,7 +206,7 @@ Authorization headers are forwarded and included in cache keys:
 
 ```bash
 curl -H "Authorization: Bearer your-token" \
-  http://localhost:4000/api/user/profile
+  http://localhost:4000/proxy/user/profile
 ```
 
 Different users get separate cache entries based on their authorization token.
@@ -278,10 +287,10 @@ Requests are cached when:
 ### Custom API Prefix
 
 ```bash
-npm run dev -- --api-prefix /v1/proxy
+npm run dev -- --api-prefix /v1/api
 
 # Requests now go to:
-curl http://localhost:4000/v1/proxy/users
+curl http://localhost:4000/v1/api/users
 ```
 
 ### Different Target Server
@@ -290,8 +299,8 @@ curl http://localhost:4000/v1/proxy/users
 npm run dev -- --target-url https://jsonplaceholder.typicode.com
 
 # Test with:
-curl http://localhost:4000/api/users/1
-curl http://localhost:4000/api/posts
+curl http://localhost:4000/proxy/users/1
+curl http://localhost:4000/proxy/posts
 ```
 
 ### Custom Cacheable Methods
@@ -303,7 +312,7 @@ npm run dev -- --cacheable-methods GET,POST,PUT
 curl -X PUT \
   -H "Content-Type: application/json" \
   -d '{"name":"updated"}' \
-  http://localhost:4000/api/users/1
+  http://localhost:4000/proxy/users/1
 ```
 
 ## Error Handling
@@ -365,7 +374,7 @@ The service can act as an authentication proxy:
 ```bash
 # Add authentication header for all requests
 curl -H "Authorization: Bearer your-api-key" \
-  http://localhost:4000/api/protected-endpoint
+  http://localhost:4000/proxy/protected-endpoint
 ```
 
 ## Example Workflows
@@ -378,7 +387,7 @@ npm run dev -- --target-url https://api.production.com
 
 # Make authenticated requests
 curl -H "Authorization: Bearer dev-token" \
-  http://localhost:4000/api/user/profile
+  http://localhost:4000/proxy/user/profile
 ```
 
 ### 2. API Testing
@@ -388,10 +397,10 @@ curl -H "Authorization: Bearer dev-token" \
 npm run dev -- --cache-ttl 3600
 
 # First request populates cache
-curl http://localhost:4000/api/test-data
+curl http://localhost:4000/proxy/test-data
 
 # Subsequent requests use cached data
-curl http://localhost:4000/api/test-data  # X-Cache: HIT
+curl http://localhost:4000/proxy/test-data  # X-Cache: HIT
 ```
 
 ### 3. Load Testing

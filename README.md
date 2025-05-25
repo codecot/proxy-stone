@@ -27,7 +27,7 @@ npm install
 npm run dev
 
 # Test the proxy
-curl http://localhost:3000/api/get
+curl http://localhost:3000/proxy/get
 ```
 
 ### PostgreSQL Setup
@@ -86,10 +86,10 @@ If the database is unavailable, Proxy Stone automatically:
 curl http://localhost:3000/health
 
 # Cache statistics
-curl http://localhost:3000/cache/stats
+curl http://localhost:3000/api/cache/stats
 
 # Request analytics
-curl http://localhost:3000/requests/stats
+curl http://localhost:3000/api/requests/stats
 
 # Database status
 curl http://localhost:3000/debug/config | jq .database

@@ -112,7 +112,7 @@ npm run dev -- \
   --cache-ttl 300
 
 # Test with target server
-curl http://localhost:3000/api/get
+curl http://localhost:3000/proxy/get
 ```
 
 ### View Request Analytics
@@ -246,32 +246,32 @@ If the database is unavailable, the application automatically:
 curl http://localhost:3000/health
 
 # Cache statistics
-curl http://localhost:3000/cache/stats
+curl http://localhost:3000/api/cache/stats
 
 # Configuration debug
 curl http://localhost:3000/debug/config
 
 # Request analytics (NEW!)
-curl http://localhost:3000/requests/stats
+curl http://localhost:3000/api/requests/stats
 ```
 
 ## 🎛️ Management Interface Examples
 
 ```bash
 # View all requests with filtering
-curl "http://localhost:3000/requests?method=GET&limit=10"
+curl "http://localhost:3000/api/requests?method=GET&limit=10"
 
 # Find slow requests
-curl "http://localhost:3000/requests" | jq '.requests[] | select(.responseTime > 1000)'
+curl "http://localhost:3000/api/requests" | jq '.requests[] | select(.responseTime > 1000)'
 
 # Monitor cache hit rate
-curl "http://localhost:3000/requests/cache-performance" | jq '.hitRate'
+curl "http://localhost:3000/api/requests/cache-performance" | jq '.hitRate'
 
 # Get error analysis
-curl "http://localhost:3000/requests?status=500"
+curl "http://localhost:3000/api/requests?status=500"
 
 # Clean old logs
-curl -X DELETE "http://localhost:3000/requests/old?days=7"
+curl -X DELETE "http://localhost:3000/api/requests/old?days=7"
 ```
 
 ## 🤝 Contributing
