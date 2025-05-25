@@ -1,0 +1,62 @@
+services:
+  # --- POSTGRES STACK ---
+  postgres:
+    image: postgres:16
+    container_name: proxy_postgres
+    profiles: ['postgres']
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      POSTGRES_DB: ${POSTGRES_DB:-proxydb}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: proxy_pgadmin
+    profiles: ['postgres']
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-adminpass}
+    ports:
+      - '5050:80'
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  # --- MYSQL STACK ---
+  mysql:
+    image: mysql:8
+    container_name: proxy_mysql
+    profiles: ['mysql']
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-proxydb}
+      MYSQL_USER: ${MYSQL_USER:-devuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devpass}
+    ports:
+      - '3306:3306'
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  adminer:
+    image: adminer
+    container_name: proxy_adminer
+    profiles: ['mysql']
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    depends_on:
+      - mysql
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  mysql_data:
