@@ -1,52 +1,46 @@
-import fastify from "fastify";
-import cors from "@fastify/cors";
-import { FastifyRequest, FastifyReply } from "fastify";
+import fastify from 'fastify';
+import { config } from './config/index.js';
+import { corsPlugin } from './plugins/cors.js';
+import { formBodyPlugin } from './plugins/formbody.js';
+import { apiRoutes } from './routes/api.js';
+import { healthRoutes } from './routes/health.js';
+import { AppInstance } from './types/index.js';
 
-const app = fastify({
-  logger: true,
+const isProduction = process.env.NODE_ENV === 'production';
+
+const app: AppInstance = fastify({
+  logger: {
+    level: 'info',
+    ...(isProduction
+      ? {}
+      : {
+          // Conditional pino-pretty configuration
+          transport: {
+            target: 'pino-pretty',
+            options: {
+              translateTime: 'HH:MM:ss Z',
+              ignore: 'pid,hostname',
+              colorize: true,
+            },
+          },
+        }),
+  },
 });
 
-// Register CORS
-await app.register(cors, {
-  origin: true, // Allow all origins
-});
+// Decorate the app instance with the config
+app.decorate('config', config);
 
-// Health check route
-app.get("/health", async () => {
-  return { status: "ok" };
-});
+// Register plugins
+await app.register(corsPlugin);
+await app.register(formBodyPlugin);
 
-// API route handler for all methods and paths under /api/*
-app.all("/api/*", async (request: FastifyRequest, reply: FastifyReply) => {
-  const method = request.method;
-  const url = request.url;
-  const headers = request.headers;
-  const body = request.body;
-
-  app.log.info(
-    {
-      method,
-      url,
-      headers,
-      body,
-    },
-    "API Request received",
-  );
-
-  // Here you can add your API logic
-  // For now, we'll just echo back the request details
-  return {
-    method,
-    url,
-    headers,
-    body,
-    timestamp: new Date().toISOString(),
-  };
-});
+// Register routes
+await app.register(apiRoutes);
+await app.register(healthRoutes);
 
 // Start server
 try {
-  await app.listen({ port: 3000, host: "0.0.0.0" });
+  await app.listen({ port: app.config.port, host: app.config.host });
 } catch (err) {
   app.log.error(err);
   process.exit(1);
