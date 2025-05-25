@@ -21,11 +21,13 @@ A high-performance **Backend for Frontend (BFF)** proxy server built with **Fast
 
 ### 📊 **Request Logging & Management** (NEW!)
 
-- **SQLite Database**: Lightweight, embedded database storage
+- **Multi-Database Support**: Choose between SQLite, PostgreSQL, or MySQL
+- **Graceful Degradation**: Application continues working even if database is unavailable
 - **Management Interface**: REST API for viewing/filtering requests
 - **Advanced Filtering**: By method, status, URL, date range, cache hits
 - **Real-time Statistics**: Cache hit rates, response times, top URLs
 - **Auto Cleanup**: Automatic removal of old logs
+- **Docker Integration**: Pre-configured Docker Compose for PostgreSQL and MySQL
 
 ### 🛠️ **Configuration & CLI**
 
@@ -78,7 +80,7 @@ A high-performance **Backend for Frontend (BFF)** proxy server built with **Fast
 - **HTTP Client**: Axios for reliable request forwarding
 - **Logging**: Pino with pretty printing in development
 - **Caching**: Hybrid in-memory + file system storage
-- **Database**: SQLite for request logging and management
+- **Database**: Multi-database support (SQLite, PostgreSQL, MySQL) for request logging and snapshot management
 - **Build**: TypeScript compiler with ES modules
 
 ## 📁 Documentation Structure
@@ -87,7 +89,8 @@ A high-performance **Backend for Frontend (BFF)** proxy server built with **Fast
 - **[API Reference](api-reference.md)** - Complete endpoint documentation
 - **[Configuration Guide](configuration.md)** - All CLI and environment options
 - **[File Cache Guide](file-cache.md)** - Persistent cache setup and usage
-- **[Request Logging Guide](request-logging.md)** - SQLite logging and management interface (NEW!)
+- **[Request Logging Guide](request-logging.md)** - Multi-database logging and management interface (NEW!)
+- **[Multi-Database Guide](multi-database.md)** - PostgreSQL, MySQL, and SQLite setup (NEW!)
 - **[Deployment Guide](deployment.md)** - Production deployment strategies
 - **[Development Guide](development.md)** - Contributing and extending
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
@@ -183,6 +186,58 @@ volumes:
   - ./cache:/app/cache
   - ./logs:/app/logs
 ```
+
+## 🗄️ Multi-Database Support (NEW!)
+
+Choose the database that best fits your needs:
+
+### SQLite (Default)
+
+```bash
+# Default - no additional setup required
+npm run dev
+```
+
+### PostgreSQL with Docker
+
+```bash
+# Start PostgreSQL container
+npm run docker:pg
+
+# Run with PostgreSQL
+npm run dev -- \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-port 5432 \
+  --db-name proxydb \
+  --db-user devuser \
+  --db-password devpass
+```
+
+### MySQL with Docker
+
+```bash
+# Start MySQL container
+npm run docker:mysql
+
+# Run with MySQL
+npm run dev -- \
+  --db-type mysql \
+  --db-host localhost \
+  --db-port 3306 \
+  --db-name proxydb \
+  --db-user devuser \
+  --db-password devpass
+```
+
+### Graceful Degradation
+
+If the database is unavailable, the application automatically:
+
+- ✅ Continues serving proxy requests
+- ✅ Maintains in-memory and file caching
+- ⚠️ Disables snapshot management with helpful error messages
+- 🔧 Provides clear recovery instructions
 
 ## 📊 Quick Health Check
 

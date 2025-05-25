@@ -21,6 +21,21 @@ The service supports three configuration methods in order of precedence:
 | Cache TTL         | `--cache-ttl`         | `CACHE_TTL`          | `300`                 | Cache time-to-live in seconds |
 | Cacheable Methods | `--cacheable-methods` | `CACHEABLE_METHODS`  | `GET,POST`            | HTTP methods to cache         |
 
+### Database Configuration (NEW!)
+
+| Option            | CLI Argument        | Environment Variable | Default                      | Description                             |
+| ----------------- | ------------------- | -------------------- | ---------------------------- | --------------------------------------- |
+| Database Type     | `--db-type`         | `DB_TYPE`            | `sqlite`                     | Database type (sqlite/postgresql/mysql) |
+| Database Host     | `--db-host`         | `DB_HOST`            | `localhost`                  | Database server hostname                |
+| Database Port     | `--db-port`         | `DB_PORT`            | `5432` (PG) / `3306` (MySQL) | Database server port                    |
+| Database Name     | `--db-name`         | `DB_NAME`            | `proxydb`                    | Database name                           |
+| Database User     | `--db-user`         | `DB_USER`            | `devuser`                    | Database username                       |
+| Database Password | `--db-password`     | `DB_PASSWORD`        | `devpass`                    | Database password                       |
+| Database Path     | `--db-path`         | `DB_PATH`            | `./logs/snapshots.db`        | SQLite database file path               |
+| Pool Min          | `--db-pool-min`     | `DB_POOL_MIN`        | `2`                          | Minimum connection pool size            |
+| Pool Max          | `--db-pool-max`     | `DB_POOL_MAX`        | `10`                         | Maximum connection pool size            |
+| Pool Timeout      | `--db-pool-timeout` | `DB_POOL_TIMEOUT`    | `30000`                      | Connection timeout (ms)                 |
+
 ## Command Line Arguments
 
 ### Basic Server Configuration
@@ -65,6 +80,43 @@ npm run dev -- --cacheable-methods GET,POST,PUT,PATCH
 npm run dev -- --cache-ttl 0
 ```
 
+### Database Configuration (NEW!)
+
+```bash
+# SQLite (default)
+npm run dev -- --db-type sqlite --db-path ./logs/snapshots.db
+
+# PostgreSQL
+npm run dev -- \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-port 5432 \
+  --db-name proxydb \
+  --db-user devuser \
+  --db-password devpass
+
+# MySQL
+npm run dev -- \
+  --db-type mysql \
+  --db-host localhost \
+  --db-port 3306 \
+  --db-name proxydb \
+  --db-user devuser \
+  --db-password devpass
+
+# With connection pool settings
+npm run dev -- \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-port 5432 \
+  --db-name proxydb \
+  --db-user devuser \
+  --db-password devpass \
+  --db-pool-min 5 \
+  --db-pool-max 20 \
+  --db-pool-timeout 60000
+```
+
 ### Complete Example
 
 ```bash
@@ -98,6 +150,16 @@ CACHEABLE_METHODS=GET,POST,PUT
 
 # Node Environment
 NODE_ENV=development
+
+# Database Configuration (NEW!)
+DB_TYPE=postgresql
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=proxydb
+DB_USER=devuser
+DB_PASSWORD=devpass
+DB_POOL_MIN=2
+DB_POOL_MAX=10
 ```
 
 ### Production Environment
@@ -213,6 +275,68 @@ npm run dev -- \
   --port 4001 \
   --api-prefix /api/v2 \
   --target-url https://api-v2.example.com
+```
+
+### 5. Multi-Database Production Setup (NEW!)
+
+Configure different database backends for different environments:
+
+**Development with SQLite:**
+
+```bash
+npm run dev -- \
+  --db-type sqlite \
+  --db-path ./logs/dev-snapshots.db \
+  --enable-file-cache \
+  --cache-ttl 60
+```
+
+**Staging with PostgreSQL:**
+
+```bash
+npm run docker:pg  # Start PostgreSQL container
+
+npm run dev -- \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-port 5432 \
+  --db-name staging_proxydb \
+  --db-user devuser \
+  --db-password devpass \
+  --db-pool-min 3 \
+  --db-pool-max 15 \
+  --cache-ttl 300
+```
+
+**Production with PostgreSQL Cluster:**
+
+```bash
+export DB_TYPE=postgresql
+export DB_HOST=postgres-cluster.production.com
+export DB_PORT=5432
+export DB_NAME=proxy_production
+export DB_USER=proxy_service
+export DB_PASSWORD=secure_production_password
+export DB_POOL_MIN=10
+export DB_POOL_MAX=50
+export DB_POOL_TIMEOUT=60000
+
+npm start
+```
+
+**High-Availability MySQL Setup:**
+
+```bash
+npm run dev -- \
+  --db-type mysql \
+  --db-host mysql-cluster.example.com \
+  --db-port 3306 \
+  --db-name proxy_ha \
+  --db-user proxy_user \
+  --db-password ha_password \
+  --db-pool-min 5 \
+  --db-pool-max 25 \
+  --cache-ttl 600
 ```
 
 ## Configuration Validation
