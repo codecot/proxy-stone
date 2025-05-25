@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
@@ -8,6 +8,7 @@ import {
   IconButton,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Toolbar,
@@ -19,6 +20,7 @@ import {
   Storage as CacheIcon,
   Monitor as MonitorIcon,
   Settings as SettingsIcon,
+  Cloud as BackendIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 240;
@@ -31,6 +33,7 @@ const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'Cache Management', icon: <CacheIcon />, path: '/cache' },
   { text: 'Backend Monitoring', icon: <MonitorIcon />, path: '/monitoring' },
+  { text: 'Backend Configuration', icon: <BackendIcon />, path: '/backends' },
   { text: 'Proxy Configuration', icon: <SettingsIcon />, path: '/config' },
 ];
 
@@ -48,14 +51,14 @@ export default function Layout({ children }: LayoutProps) {
       <Toolbar />
       <List>
         {menuItems.map((item) => (
-          <ListItem
-            button
-            key={item.text}
-            onClick={() => navigate(item.path)}
-            selected={location.pathname === item.path}
-          >
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.text} />
+          <ListItem key={item.text} disablePadding>
+            <ListItemButton
+              onClick={() => navigate(item.path)}
+              selected={location.pathname === item.path}
+            >
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItemButton>
           </ListItem>
         ))}
       </List>

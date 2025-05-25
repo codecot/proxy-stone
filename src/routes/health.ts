@@ -44,6 +44,32 @@ export async function healthRoutes(fastify: FastifyInstance) {
     };
   });
 
+  // Backend status endpoint for UI
+  fastify.get('/health/backend', async (request, reply) => {
+    const status = await healthService.getHealthStatus();
+
+    // Mock backend status for now - in a real cluster setup, this would check actual backend nodes
+    const backends = [
+      {
+        host: `${fastify.config.host}:${fastify.config.port}`,
+        status: status.status === 'ok' ? 'online' : 'offline',
+        responseTime: Math.floor(Math.random() * 100) + 10, // Mock response time
+        lastCheck: Date.now(),
+        metadata: {
+          version: '1.0.0', // Mock version
+          environment: process.env.NODE_ENV || 'development',
+        },
+      },
+    ];
+
+    return {
+      backends,
+      totalBackends: backends.length,
+      onlineBackends: backends.filter((b) => b.status === 'online').length,
+      mode: 'single', // This would be configurable in a real cluster setup
+    };
+  });
+
   // Cache configuration debug endpoint
   fastify.get('/debug/config', async (request, reply) => {
     const cacheConfig = fastify.cache.getConfig();

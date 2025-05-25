@@ -1,6 +1,7 @@
-import { Box, Typography, Paper, CircularProgress } from '@mui/material';
+import { Box, Typography, Paper, CircularProgress, Chip } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { apiService } from '../services/api';
+import { backendConfigService } from '../services/backendConfig';
 
 interface BackendStatus {
   host: string;
@@ -24,6 +25,10 @@ export default function Dashboard() {
     queryKey: ['cacheConfig'],
     queryFn: apiService.getCacheConfig,
   });
+
+  // Get current backend configuration
+  const backendConfig = backendConfigService.getConfig();
+  const activeBackend = backendConfigService.getActiveBackend();
 
   if (healthLoading || backendLoading || cacheConfigLoading) {
     return (
@@ -55,6 +60,28 @@ export default function Dashboard() {
                 {healthStatus?.uptime
                   ? `${Math.floor(healthStatus.uptime / 3600)}h ${Math.floor((healthStatus.uptime % 3600) / 60)}m`
                   : 'N/A'}
+              </Typography>
+            </Paper>
+          </Box>
+
+          {/* Backend Configuration */}
+          <Box flex="1" minWidth="300px">
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Backend Configuration
+              </Typography>
+              <Typography>
+                Mode: <Chip label={backendConfig.mode} size="small" />
+              </Typography>
+              <Typography>Active Backend: {activeBackend?.name || 'None'}</Typography>
+              <Typography>Total Backends: {backendConfig.backends.length}</Typography>
+              <Typography>
+                Status:{' '}
+                <Chip
+                  label={activeBackend?.status || 'unknown'}
+                  color={activeBackend?.status === 'online' ? 'success' : 'error'}
+                  size="small"
+                />
               </Typography>
             </Paper>
           </Box>

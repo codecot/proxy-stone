@@ -1,12 +1,22 @@
 import axios from 'axios';
+import { backendConfigService } from './backendConfig';
 
-const API_BASE_URL = 'http://localhost:4000/api';
-
+// Create axios instance with dynamic base URL
 const api = axios.create({
-  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Interceptor to set dynamic base URL
+api.interceptors.request.use((config) => {
+  const activeBackend = backendConfigService.getActiveBackend();
+  if (activeBackend) {
+    config.baseURL = `${activeBackend.url}/api`;
+  } else {
+    config.baseURL = 'http://localhost:4000/api'; // fallback
+  }
+  return config;
 });
 
 export interface CacheEntry {
