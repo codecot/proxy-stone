@@ -4,10 +4,12 @@ import { corsPlugin } from './plugins/cors.js';
 import { apiRoutes } from './routes/api.js';
 import { healthRoutes } from './routes/health.js';
 import { requestRoutes } from './routes/requests.js';
+import { cacheRoutes } from './routes/cache.js';
 import { AppInstance } from './types/index.js';
 import { formBodyPlugin } from './plugins/formbody.js';
 import { CacheService } from './services/cache.js';
 import { RequestLoggerService } from './services/request-logger.js';
+import { SnapshotManager } from './services/snapshot-manager.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -61,14 +63,22 @@ const requestLoggerService = new RequestLoggerService(
   config.requestLogDbPath
 );
 
+// Initialize snapshot manager service
+const snapshotManager = new SnapshotManager(
+  true, // Enable snapshot management
+  config.snapshotDbPath || './logs/snapshots.db'
+);
+
 // Initialize services
 await cacheService.initialize();
 await requestLoggerService.initialize();
+await snapshotManager.initialize();
 
-// Decorate the app instance with the config, cache, and request logger
+// Decorate the app instance with the config, cache, request logger, and snapshot manager
 app.decorate('config', config);
 app.decorate('cache', cacheService);
 app.decorate('requestLogger', requestLoggerService);
+app.decorate('snapshotManager', snapshotManager);
 
 // Log configuration
 app.log.info(`Cache TTL: ${config.cacheTTL} seconds`);
@@ -80,6 +90,8 @@ app.log.info(`Request logging enabled: ${config.enableRequestLogging}`);
 if (config.enableRequestLogging) {
   app.log.info(`Request log database: ${config.requestLogDbPath}`);
 }
+app.log.info(`Snapshot management enabled: true`);
+app.log.info(`Snapshot database: ${config.snapshotDbPath || './logs/snapshots.db'}`);
 
 // Register plugins
 await app.register(corsPlugin);
@@ -89,6 +101,7 @@ await formBodyPlugin(app);
 await app.register(healthRoutes);
 await app.register(apiRoutes);
 await app.register(requestRoutes); // Add request management routes
+await app.register(cacheRoutes); // Add cache management routes
 
 // Clean expired cache entries every 10 minutes
 setInterval(
@@ -102,6 +115,17 @@ setInterval(
     }
   },
   10 * 60 * 1000
+);
+
+// Clean expired snapshots every 30 minutes
+setInterval(
+  async () => {
+    const cleaned = await snapshotManager.cleanExpired();
+    if (cleaned > 0) {
+      app.log.info(`Cleaned ${cleaned} expired snapshot metadata entries`);
+    }
+  },
+  30 * 60 * 1000 // 30 minutes
 );
 
 // Clean old request logs every 24 hours (older than 30 days)
@@ -122,6 +146,7 @@ process.on('SIGTERM', async () => {
   app.log.info('Shutting down gracefully...');
   cacheService.shutdown();
   await requestLoggerService.close();
+  await snapshotManager.close();
   process.exit(0);
 });
 
@@ -129,6 +154,7 @@ process.on('SIGINT', async () => {
   app.log.info('Shutting down gracefully...');
   cacheService.shutdown();
   await requestLoggerService.close();
+  await snapshotManager.close();
   process.exit(0);
 });
 

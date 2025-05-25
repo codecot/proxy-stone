@@ -34,30 +34,6 @@ export async function healthRoutes(fastify: FastifyInstance) {
     };
   });
 
-  // Enhanced cache statistics endpoint
-  fastify.get('/cache/stats', async (request, reply) => {
-    const stats = await fastify.cache.getStats();
-    const config = fastify.cache.getConfig();
-
-    return {
-      ...stats,
-      config: {
-        defaultTTL: config.defaultTTL,
-        methods: config.methods,
-        totalRules: config.rules.length,
-        keyOptions: config.keyOptions,
-        behavior: config.behavior,
-      },
-      rules: config.rules.map((rule) => ({
-        pattern: rule.pattern,
-        methods: rule.methods,
-        ttl: rule.ttl,
-        enabled: rule.enabled,
-        hasConditions: !!rule.conditions,
-      })),
-    };
-  });
-
   // Cache rules endpoint
   fastify.get('/cache/rules', async (request, reply) => {
     const config = fastify.cache.getConfig();

@@ -1,6 +1,7 @@
 import { FastifyInstance as OriginalFastifyInstance, FastifyRequest } from 'fastify';
 import { CacheService } from '../services/cache.js';
 import { RequestLoggerService } from '../services/request-logger.js';
+import { SnapshotManager } from '../services/snapshot-manager.js';
 
 export interface ApiRequest {
   method: string;
@@ -77,6 +78,8 @@ export interface ServerConfig {
   // Request logging options
   enableRequestLogging: boolean;
   requestLogDbPath: string;
+  // Snapshot management options
+  snapshotDbPath: string;
 }
 
 // Extend FastifyInstance to include the decorated config property
@@ -85,6 +88,7 @@ declare module 'fastify' {
     config: ServerConfig;
     cache: CacheService;
     requestLogger: RequestLoggerService;
+    snapshotManager: SnapshotManager;
   }
 }
 

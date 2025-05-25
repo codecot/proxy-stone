@@ -97,6 +97,7 @@ const cliFileCacheDir = getArgValue('file-cache-dir');
 const cliEnableFileCache = getBooleanFlag('enable-file-cache');
 const cliRequestLogDbPath = getArgValue('request-log-db');
 const cliEnableRequestLogging = getBooleanFlag('enable-request-logging');
+const cliSnapshotDbPath = getArgValue('snapshot-db');
 
 // Advanced cache configuration
 const cliCacheRules = getArgValue('cache-rules');
@@ -168,4 +169,6 @@ export const config: ServerConfig = {
   // Request logging configuration
   enableRequestLogging: cliEnableRequestLogging || process.env.ENABLE_REQUEST_LOGGING === 'true',
   requestLogDbPath: cliRequestLogDbPath || process.env.REQUEST_LOG_DB_PATH || './logs/requests.db',
+  // Snapshot management configuration
+  snapshotDbPath: cliSnapshotDbPath || process.env.SNAPSHOT_DB_PATH || './logs/snapshots.db',
 };

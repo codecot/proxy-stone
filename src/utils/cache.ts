@@ -55,6 +55,16 @@ export async function checkCacheAndServe(
         'Serving response from cache'
       );
 
+      // Update snapshot access statistics if snapshot manager is available
+      try {
+        if (fastify.snapshotManager) {
+          await fastify.snapshotManager.updateAccess(cacheKey);
+        }
+      } catch (error) {
+        fastify.log.warn('Failed to update snapshot access statistics:', error);
+        // Don't fail cache operation due to snapshot manager issues
+      }
+
       // Set cached headers safely
       try {
         Object.entries(cached.headers || {}).forEach(([key, value]) => {
@@ -96,7 +106,7 @@ export async function checkCacheAndServe(
 }
 
 /**
- * Store successful response in cache with comprehensive error handling
+ * Store successful response in cache with comprehensive error handling and snapshot recording
  */
 export async function storeInCache(
   fastify: FastifyInstance,
@@ -131,6 +141,38 @@ export async function storeInCache(
     } catch (error) {
       fastify.log.warn('Failed to store response in cache:', error);
       return { success: false, error: 'cache-store-failed' };
+    }
+
+    // Record snapshot metadata if snapshot manager is available
+    try {
+      if (fastify.snapshotManager) {
+        // Get TTL for this entry
+        const ttl = fastify.cache.getTTL(method, targetUrl, headers, status);
+
+        // Extract backend host from targetUrl
+        let backendHost: string;
+        try {
+          backendHost = new URL(targetUrl).host;
+        } catch (error) {
+          backendHost = targetUrl;
+        }
+
+        // Record the snapshot
+        await fastify.snapshotManager.recordSnapshot(
+          cacheKey,
+          targetUrl,
+          method,
+          status,
+          ttl,
+          backendHost,
+          responseData,
+          responseHeaders,
+          body
+        );
+      }
+    } catch (error) {
+      fastify.log.warn('Failed to record snapshot metadata:', error);
+      // Don't fail cache operation due to snapshot recording issues
     }
 
     // Log successful caching
