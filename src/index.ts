@@ -12,6 +12,7 @@ import { formBodyPlugin } from './plugins/formbody.js';
 import { CacheService } from './services/cache.js';
 import { RequestLoggerService } from './services/request-logger.js';
 import { SnapshotManager } from './services/snapshot-manager.js';
+import { AuthService } from './services/auth-service.js';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -72,16 +73,32 @@ const snapshotManager = new SnapshotManager(
   config.snapshotDbPath // Fallback for legacy configuration
 );
 
+// Initialize auth service
+let authService: AuthService | null = null;
+if (config.auth?.enabled && config.auth.jwt?.secret) {
+  authService = new AuthService(
+    config.auth.hashSalt,
+    config.auth.jwt.secret,
+    config.auth.jwt.expiresIn || '24h',
+    config.auth.jwt.issuer || 'proxy-stone',
+    config.auth.maxLoginAttempts,
+    config.auth.lockoutDuration
+  );
+}
+
 // Initialize services
 await cacheService.initialize();
 await requestLoggerService.initialize();
 await snapshotManager.initialize();
 
-// Decorate the app instance with the config, cache, request logger, and snapshot manager
+// Decorate the app instance with the config, cache, request logger, snapshot manager, and auth service
 app.decorate('config', config);
 app.decorate('cache', cacheService);
 app.decorate('requestLogger', requestLoggerService);
 app.decorate('snapshotManager', snapshotManager);
+if (authService) {
+  app.decorate('authService', authService);
+}
 
 // Log configuration
 app.log.info(`Cache TTL: ${config.cacheTTL} seconds`);
@@ -104,6 +121,7 @@ if (config.database?.type === 'sqlite' || !config.database) {
 }
 app.log.info(`Authentication enabled: ${config.auth?.enabled || false}`);
 if (config.auth?.enabled) {
+  app.log.info(`User authentication enabled: ${config.auth.enableUserAuth || false}`);
   app.log.info(`API keys configured: ${config.auth.apiKeys.length}`);
   app.log.info(`Protected paths: ${config.auth.protectedPaths.join(', ')}`);
   app.log.info(`JWT support: ${config.auth.jwt ? 'enabled' : 'disabled'}`);
@@ -111,6 +129,7 @@ if (config.auth?.enabled) {
 
 // Register plugins
 await app.register(corsPlugin);
+await app.register(import('@fastify/cookie'));
 await app.register(authPlugin);
 await formBodyPlugin(app);
 

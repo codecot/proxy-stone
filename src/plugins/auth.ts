@@ -7,6 +7,7 @@ declare module 'fastify' {
     auth?: {
       role: Role;
       keyName?: string;
+      sessionId?: string;
       authenticated: boolean;
     };
   }
@@ -47,30 +48,39 @@ export const authMiddleware = (options: AuthPluginOptions = {}) => {
       return;
     }
 
-    // Extract API key from headers
-    const apiKey =
+    // Extract token from headers
+    const token =
       request.headers.authorization?.replace('Bearer ', '') ||
-      (request.headers['x-api-key'] as string);
+      (request.headers['x-api-key'] as string) ||
+      (request.headers['x-access-token'] as string);
 
-    if (!apiKey) {
+    if (!token) {
       return reply.status(401).send({
         error: 'Unauthorized',
-        message: 'API key required. Provide via Authorization: Bearer <key> or X-API-Key header.',
+        message:
+          'Token required. Provide via Authorization: Bearer <token> or X-Access-Token header.',
       });
     }
 
-    // Find matching API key
-    const keyConfig = auth.apiKeys.find((k) => k.key === apiKey && k.enabled !== false);
+    const authService = (request.server as any).authService;
+    if (!authService) {
+      return reply.status(503).send({
+        error: 'Service Unavailable',
+        message: 'Authentication service not available.',
+      });
+    }
 
-    if (!keyConfig) {
+    // Verify JWT token
+    const tokenPayload = authService.verifyToken(token);
+    if (!tokenPayload) {
       return reply.status(401).send({
         error: 'Unauthorized',
-        message: 'Invalid API key.',
+        message: 'Invalid or expired token.',
       });
     }
 
     // Check role requirements
-    if (options.requiredRoles && !options.requiredRoles.includes(keyConfig.role)) {
+    if (options.requiredRoles && !options.requiredRoles.includes(tokenPayload.role)) {
       return reply.status(403).send({
         error: 'Forbidden',
         message: `Insufficient permissions. Required roles: ${options.requiredRoles.join(', ')}`,
@@ -79,8 +89,8 @@ export const authMiddleware = (options: AuthPluginOptions = {}) => {
 
     // Set auth context
     request.auth = {
-      role: keyConfig.role,
-      keyName: keyConfig.name,
+      role: tokenPayload.role,
+      sessionId: tokenPayload.userId || tokenPayload.apiKeyId,
       authenticated: true,
     };
   };

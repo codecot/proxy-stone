@@ -155,6 +155,12 @@ const createDefaultAuthConfig = (): AuthConfig => {
   return {
     enabled: false, // Disabled by default
     apiKeys: [], // No default API keys
+    users: [], // No default users
+    enableUserAuth: false, // User auth disabled by default
+    sessionTTL: 86400, // 24 hours (legacy, not used with JWT)
+    hashSalt: process.env.AUTH_SALT || 'default-salt-change-in-production',
+    maxLoginAttempts: 5,
+    lockoutDuration: 900, // 15 minutes
     protectedPaths: ['/api/cache*', '/api/metrics*', '/api/requests*', '/api/snapshots*'], // Default protected paths
   };
 };
@@ -188,6 +194,7 @@ const cliRedisKeyPrefix = getArgValue('redis-key-prefix');
 
 // Auth configuration
 const cliAuthEnabled = getBooleanFlag('enable-auth');
+const cliUserAuthEnabled = getBooleanFlag('enable-user-auth');
 const cliApiKeys = getArgValue('api-keys');
 const cliJwtSecret = getArgValue('jwt-secret');
 const cliAuthProtectedPaths = getArgValue('auth-protected-paths');
@@ -264,19 +271,37 @@ export const config: ServerConfig = {
   // Multi-database configuration
   database: databaseConfig,
   // Auth configuration
-  auth: {
-    ...createDefaultAuthConfig(),
-    enabled: cliAuthEnabled || process.env.ENABLE_AUTH === 'true',
-    apiKeys: apiKeys.length > 0 ? apiKeys : createDefaultAuthConfig().apiKeys,
-    protectedPaths:
-      protectedPaths.length > 0 ? protectedPaths : createDefaultAuthConfig().protectedPaths,
-    jwt:
-      cliJwtSecret || process.env.JWT_SECRET
+  auth: (() => {
+    const authEnabled = cliAuthEnabled || process.env.ENABLE_AUTH === 'true';
+    const userAuthEnabled = cliUserAuthEnabled || process.env.ENABLE_USER_AUTH === 'true';
+    const jwtSecret = cliJwtSecret || process.env.JWT_SECRET;
+
+    // If auth is enabled but no JWT secret is provided, warn and disable auth
+    if (authEnabled && !jwtSecret) {
+      console.warn('⚠️  Authentication enabled but no JWT_SECRET provided. Auth will be disabled.');
+      console.warn('   Set JWT_SECRET environment variable or --jwt-secret CLI argument.');
+      return {
+        ...createDefaultAuthConfig(),
+        enabled: false,
+      };
+    }
+
+    const config = {
+      ...createDefaultAuthConfig(),
+      enabled: authEnabled,
+      enableUserAuth: userAuthEnabled, // Enable user auth separately
+      apiKeys: apiKeys.length > 0 ? apiKeys : createDefaultAuthConfig().apiKeys,
+      protectedPaths:
+        protectedPaths.length > 0 ? protectedPaths : createDefaultAuthConfig().protectedPaths,
+      jwt: jwtSecret
         ? {
-            secret: cliJwtSecret || process.env.JWT_SECRET!,
+            secret: jwtSecret,
             issuer: process.env.JWT_ISSUER || 'proxy-stone',
             expiresIn: process.env.JWT_EXPIRES_IN || '24h',
           }
         : undefined,
-  },
+    };
+
+    return config;
+  })(),
 };

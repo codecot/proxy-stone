@@ -71,21 +71,57 @@ export enum Role {
 }
 
 export interface ApiKey {
-  key: string;
+  id: string; // Unique identifier
+  keyHash: string; // Hashed API key (never store plain text)
   role: Role;
   name?: string;
   enabled?: boolean;
+  createdAt: string;
+  lastUsed?: string;
+  expiresAt?: string; // Optional expiration
+}
+
+export interface User {
+  id: string;
+  username: string;
+  passwordHash: string; // Hashed password
+  role: Role;
+  enabled: boolean;
+  createdAt: string;
+  lastLogin?: string;
+}
+
+export interface AuthSession {
+  sessionId: string;
+  userId?: string;
+  apiKeyId?: string;
+  role: Role;
+  createdAt: string;
+  expiresAt: string;
+  ipAddress?: string;
 }
 
 export interface AuthConfig {
   enabled: boolean;
+  // API Key authentication
   apiKeys: ApiKey[];
+  // User/password authentication
+  users: User[];
+  enableUserAuth: boolean;
+  // Session management
+  sessionTTL: number; // Session TTL in seconds
+  // Security settings
+  hashSalt: string; // Salt for hashing
+  maxLoginAttempts: number;
+  lockoutDuration: number; // In seconds
+  // Protected paths
+  protectedPaths: string[];
+  // JWT settings (optional)
   jwt?: {
     secret: string;
     issuer?: string;
     expiresIn?: string;
   };
-  protectedPaths: string[]; // Paths that require auth when enabled
 }
 
 export interface ServerConfig {
