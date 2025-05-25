@@ -5,6 +5,13 @@ import { PostgreSQLAdapter } from './adapters/postgresql-adapter.js';
 
 export class DatabaseFactory {
   static async create(config: DatabaseConfig): Promise<DatabaseAdapter> {
+    // Validate database type
+    if (!config.type || !Object.values(DatabaseDialect).includes(config.type as DatabaseDialect)) {
+      console.warn(`Invalid database type '${config.type}', falling back to SQLite`);
+      config.type = DatabaseDialect.SQLITE;
+      config.path = config.path || './logs/snapshots.db';
+    }
+
     switch (config.type) {
       case DatabaseDialect.SQLITE:
         return new SQLiteAdapter(config);
@@ -13,7 +20,13 @@ export class DatabaseFactory {
       case DatabaseDialect.POSTGRESQL:
         return new PostgreSQLAdapter(config);
       default:
-        throw new Error(`Unsupported database type: ${config.type}`);
+        // This should never happen after the validation above, but just in case
+        console.warn(`Unsupported database type: ${config.type}, falling back to SQLite`);
+        return new SQLiteAdapter({
+          ...config,
+          type: DatabaseDialect.SQLITE,
+          path: './logs/snapshots.db',
+        });
     }
   }
 

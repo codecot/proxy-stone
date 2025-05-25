@@ -60,8 +60,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
 
     const result = await run(sql, params);
     return {
-      affectedRows: result.changes || 0,
-      insertId: result.lastID,
+      affectedRows: result?.changes ?? 0,
+      insertId: result?.lastID,
     };
   }
 

@@ -1,19 +1,18 @@
 import { ServerConfig, CacheConfig, CacheRule } from '../types/index.js';
 import { DatabaseConfig, DatabaseDialect, DatabaseFactory } from '../database/index.js';
 
-// Helper function to parse command line arguments
+// Helper function to parse command line arguments (gets the LAST occurrence to allow overriding)
 const getArgValue = (argName: string): string | undefined => {
-  const argIndex = process.argv.findIndex((arg) => arg === `--${argName}`);
-  // Check if the flag exists and there is a value after it,
-  // and that the value is not another flag itself.
-  if (
-    argIndex > -1 &&
-    process.argv.length > argIndex + 1 &&
-    !process.argv[argIndex + 1].startsWith('--')
-  ) {
-    return process.argv[argIndex + 1];
+  const argName_ = `--${argName}`;
+  let lastValue: string | undefined = undefined;
+
+  for (let i = 0; i < process.argv.length - 1; i++) {
+    if (process.argv[i] === argName_ && !process.argv[i + 1].startsWith('--')) {
+      lastValue = process.argv[i + 1];
+    }
   }
-  return undefined;
+
+  return lastValue;
 };
 
 // Helper function to check if a boolean flag is present
@@ -23,7 +22,13 @@ const getBooleanFlag = (argName: string): boolean => {
 
 // Helper function to create database configuration
 const createDatabaseConfig = (): DatabaseConfig => {
-  const dbType = (getArgValue('db-type') || process.env.DB_TYPE || 'sqlite') as DatabaseDialect;
+  let dbType = (getArgValue('db-type') || process.env.DB_TYPE || 'sqlite') as DatabaseDialect;
+
+  // Validate database type early and fallback to SQLite if invalid
+  if (!Object.values(DatabaseDialect).includes(dbType)) {
+    console.warn(`Invalid database type '${dbType}', falling back to SQLite`);
+    dbType = DatabaseDialect.SQLITE;
+  }
 
   // Get default configuration for the database type
   const defaults = DatabaseFactory.getDefaultConfig(dbType);
@@ -46,7 +51,21 @@ const createDatabaseConfig = (): DatabaseConfig => {
   };
 
   // Validate configuration
-  DatabaseFactory.validateConfig(config);
+  try {
+    DatabaseFactory.validateConfig(config);
+  } catch (error) {
+    console.warn(
+      `Database configuration validation failed: ${error instanceof Error ? error.message : error}`
+    );
+    console.warn('Falling back to SQLite with default configuration');
+
+    // Fallback to SQLite
+    const sqliteDefaults = DatabaseFactory.getDefaultConfig(DatabaseDialect.SQLITE);
+    return {
+      type: DatabaseDialect.SQLITE,
+      path: sqliteDefaults.path || './logs/snapshots.db',
+    };
+  }
 
   return config;
 };

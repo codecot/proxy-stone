@@ -77,7 +77,10 @@ export class SnapshotManager {
    * Initialize the snapshot metadata database
    */
   async initialize(): Promise<void> {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      console.log('Snapshot manager disabled');
+      return;
+    }
 
     try {
       // Use new database configuration if available, otherwise fall back to legacy path
@@ -90,22 +93,54 @@ export class SnapshotManager {
       }
 
       if (!config) {
-        throw new Error('Database configuration is required');
+        console.warn('No database configuration provided, disabling snapshot manager');
+        this.enabled = false;
+        return;
       }
 
-      // Create database adapter
+      console.log(`Initializing snapshot manager with ${config.type} database...`);
+
+      // Create database adapter with timeout
       this.db = await DatabaseFactory.create(config);
-      await this.db.initialize();
+
+      // Set a timeout for database initialization
+      const initPromise = this.db.initialize();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Database initialization timeout')), 10000);
+      });
+
+      await Promise.race([initPromise, timeoutPromise]);
 
       this.sqlGenerator = new SQLGenerator(this.db.getDialect());
 
       // Create tables if they don't exist
       await this.ensureTables();
 
-      console.log(`Snapshot manager initialized with ${config.type} database`);
+      console.log(`✅ Snapshot manager initialized successfully with ${config.type} database`);
     } catch (error) {
-      console.error('Failed to initialize snapshot manager:', error);
+      console.warn(
+        '⚠️  Failed to initialize snapshot manager:',
+        error instanceof Error ? error.message : error
+      );
+      console.warn(
+        '📝 Snapshot management will be disabled, but the application will continue to work'
+      );
+      console.warn('🔧 To fix this:');
+
+      if (this.dbConfig?.type === 'postgresql') {
+        console.warn('   - Ensure PostgreSQL is running: npm run docker:pg');
+        console.warn('   - Check connection details in .env.pgsql');
+      } else if (this.dbConfig?.type === 'mysql') {
+        console.warn('   - Ensure MySQL is running: npm run docker:mysql');
+        console.warn('   - Check connection details in .env.mysql');
+      } else {
+        console.warn('   - Check SQLite database path and permissions');
+      }
+
+      // Gracefully disable snapshot management
       this.enabled = false;
+      this.db = null;
+      this.sqlGenerator = null;
     }
   }
 
