@@ -263,9 +263,82 @@ export class CacheService {
    * Warm up cache by loading existing file cache entries
    */
   private async warmupCache(): Promise<void> {
-    // Implementation depends on file cache service
-    // For now, we'll skip this but it could load frequently accessed entries
-    console.log('Cache warmup completed');
+    try {
+      console.log('Starting cache warmup...');
+      const startTime = Date.now();
+
+      // Load file cache entries into memory cache
+      const loadedCount = await this.fileCache.loadIntoMemoryCache(this.cache);
+
+      // If Redis is available, also populate Redis cache
+      let redisLoadedCount = 0;
+      if (this.isRedisAvailable()) {
+        redisLoadedCount = await this.warmupRedisFromMemory();
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(
+        `Cache warmup completed in ${duration}ms: ` +
+          `${loadedCount} entries loaded into memory` +
+          (redisLoadedCount > 0 ? `, ${redisLoadedCount} entries loaded into Redis` : '')
+      );
+
+      // Update statistics
+      this.stats.hits += loadedCount; // Count warmup as hits since they're valid cache entries
+    } catch (error) {
+      console.error('Cache warmup failed:', error);
+      // Don't throw - warmup failure shouldn't prevent app startup
+    }
+  }
+
+  /**
+   * Warm up Redis cache from memory cache entries
+   */
+  private async warmupRedisFromMemory(): Promise<number> {
+    if (!this.isRedisAvailable()) {
+      return 0;
+    }
+
+    let loadedCount = 0;
+    const promises: Promise<void>[] = [];
+
+    for (const [key, entry] of this.cache.entries()) {
+      // Skip expired entries
+      if (this.isExpired(entry)) {
+        continue;
+      }
+
+      // Load into Redis asynchronously
+      const promise = this.safeRedisOperation(
+        async () => {
+          const serialized = JSON.stringify(entry);
+          const remainingTTL = Math.max(
+            1,
+            Math.floor((entry.createdAt + entry.ttl * 1000 - Date.now()) / 1000)
+          );
+          await this.redis.setex(key, remainingTTL, serialized);
+          loadedCount++;
+        },
+        undefined,
+        'warmup-redis',
+        key
+      );
+
+      promises.push(promise);
+
+      // Process in batches to avoid overwhelming Redis
+      if (promises.length >= 100) {
+        await Promise.allSettled(promises);
+        promises.length = 0;
+      }
+    }
+
+    // Process remaining promises
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
+
+    return loadedCount;
   }
 
   /**

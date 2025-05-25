@@ -46,7 +46,7 @@ const cacheService = new CacheService(
       maxKeyLength: 200,
     },
     behavior: {
-      warmupEnabled: false,
+      warmupEnabled: true, // Enable cache warmup by default
       backgroundCleanup: true,
       cleanupInterval: 600,
       maxSize: 10000,
@@ -83,6 +83,7 @@ app.decorate('snapshotManager', snapshotManager);
 
 // Log configuration
 app.log.info(`Cache TTL: ${config.cacheTTL} seconds`);
+app.log.info(`Cache warmup enabled: ${config.cache?.behavior?.warmupEnabled || false}`);
 app.log.info(`File cache enabled: ${config.enableFileCache}`);
 if (config.enableFileCache) {
   app.log.info(`File cache directory: ${config.fileCacheDir}`);

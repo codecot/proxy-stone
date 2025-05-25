@@ -128,7 +128,7 @@ const createDefaultCacheConfig = (
       maxKeyLength: 200,
     },
     behavior: {
-      warmupEnabled: false,
+      warmupEnabled: true, // Enable cache warmup by default
       backgroundCleanup: true,
       cleanupInterval: 600, // Clean every 10 minutes
       maxSize: 10000, // Maximum 10k cache entries
