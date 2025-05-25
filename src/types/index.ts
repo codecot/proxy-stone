@@ -2,6 +2,7 @@ import { FastifyInstance as OriginalFastifyInstance, FastifyRequest } from 'fast
 import { CacheService } from '../services/cache.js';
 import { RequestLoggerService } from '../services/request-logger.js';
 import { SnapshotManager } from '../services/snapshot-manager.js';
+import { DatabaseConfig } from '../database/types.js';
 
 export interface ApiRequest {
   method: string;
@@ -78,8 +79,10 @@ export interface ServerConfig {
   // Request logging options
   enableRequestLogging: boolean;
   requestLogDbPath: string;
-  // Snapshot management options
+  // Snapshot management options (legacy)
   snapshotDbPath: string;
+  // Multi-database configuration
+  database?: DatabaseConfig;
 }
 
 // Extend FastifyInstance to include the decorated config property

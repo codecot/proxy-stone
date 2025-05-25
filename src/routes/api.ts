@@ -13,6 +13,7 @@ import {
   createErrorResponse,
   createSpecificErrorResponse,
   createErrorContext,
+  safeCreateErrorContext,
   logSuccessResponse,
   logErrorResponse,
   categorizeError,
@@ -132,10 +133,12 @@ export async function apiRoutes(fastify: FastifyInstance) {
         } catch (error) {
           // Categorize the error for better handling
           const errorType = categorizeError(error);
-          errorContext = createErrorContext(error, request, processedRequest, cacheKey);
+          errorContext = safeCreateErrorContext(error, request, processedRequest, cacheKey);
 
           // Log comprehensive error context
-          logErrorResponse(fastify.log, errorContext, errorType);
+          if (errorContext) {
+            logErrorResponse(fastify.log, errorContext, errorType);
+          }
 
           // Create appropriate error response
           statusCode = 500;
@@ -235,11 +238,13 @@ export async function apiRoutes(fastify: FastifyInstance) {
 
         // Create comprehensive error context if not already created
         if (!errorContext) {
-          errorContext = createErrorContext(error, request, processedRequest, cacheKey);
+          errorContext = safeCreateErrorContext(error, request, processedRequest, cacheKey);
         }
 
         // Log comprehensive error
-        logErrorResponse(fastify.log, errorContext, errorType);
+        if (errorContext) {
+          logErrorResponse(fastify.log, errorContext, errorType);
+        }
 
         // Set appropriate status and response data
         statusCode =

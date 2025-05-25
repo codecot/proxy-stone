@@ -1,4 +1,5 @@
 import { ServerConfig, CacheConfig, CacheRule } from '../types/index.js';
+import { DatabaseConfig, DatabaseDialect, DatabaseFactory } from '../database/index.js';
 
 // Helper function to parse command line arguments
 const getArgValue = (argName: string): string | undefined => {
@@ -18,6 +19,36 @@ const getArgValue = (argName: string): string | undefined => {
 // Helper function to check if a boolean flag is present
 const getBooleanFlag = (argName: string): boolean => {
   return process.argv.includes(`--${argName}`);
+};
+
+// Helper function to create database configuration
+const createDatabaseConfig = (): DatabaseConfig => {
+  const dbType = (getArgValue('db-type') || process.env.DB_TYPE || 'sqlite') as DatabaseDialect;
+
+  // Get default configuration for the database type
+  const defaults = DatabaseFactory.getDefaultConfig(dbType);
+
+  const config: DatabaseConfig = {
+    type: dbType,
+    // SQLite specific
+    path: getArgValue('db-path') || process.env.DB_PATH || defaults.path,
+    // MySQL/PostgreSQL specific
+    host: getArgValue('db-host') || process.env.DB_HOST || defaults.host,
+    port: Number(getArgValue('db-port') || process.env.DB_PORT) || defaults.port,
+    user: getArgValue('db-user') || process.env.DB_USER,
+    password: getArgValue('db-password') || process.env.DB_PASSWORD,
+    database: getArgValue('db-name') || process.env.DB_NAME,
+    // Connection pool settings
+    poolMin: Number(getArgValue('db-pool-min') || process.env.DB_POOL_MIN) || defaults.poolMin,
+    poolMax: Number(getArgValue('db-pool-max') || process.env.DB_POOL_MAX) || defaults.poolMax,
+    poolTimeout:
+      Number(getArgValue('db-pool-timeout') || process.env.DB_POOL_TIMEOUT) || defaults.poolTimeout,
+  };
+
+  // Validate configuration
+  DatabaseFactory.validateConfig(config);
+
+  return config;
 };
 
 // Helper function to parse cache rules from JSON string
@@ -114,6 +145,9 @@ const cliRedisPassword = getArgValue('redis-password');
 const cliRedisDb = getArgValue('redis-db');
 const cliRedisKeyPrefix = getArgValue('redis-key-prefix');
 
+// Database configuration
+const databaseConfig = createDatabaseConfig();
+
 const defaultTTL = Number(cliCacheTTL || process.env.CACHE_TTL) || 300;
 const cacheableMethods = (cliCacheableMethods || process.env.CACHEABLE_METHODS || 'GET,POST')
   .split(',')
@@ -169,6 +203,8 @@ export const config: ServerConfig = {
   // Request logging configuration
   enableRequestLogging: cliEnableRequestLogging || process.env.ENABLE_REQUEST_LOGGING === 'true',
   requestLogDbPath: cliRequestLogDbPath || process.env.REQUEST_LOG_DB_PATH || './logs/requests.db',
-  // Snapshot management configuration
+  // Snapshot management configuration (legacy)
   snapshotDbPath: cliSnapshotDbPath || process.env.SNAPSHOT_DB_PATH || './logs/snapshots.db',
+  // Multi-database configuration
+  database: databaseConfig,
 };

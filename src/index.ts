@@ -66,7 +66,8 @@ const requestLoggerService = new RequestLoggerService(
 // Initialize snapshot manager service
 const snapshotManager = new SnapshotManager(
   true, // Enable snapshot management
-  config.snapshotDbPath || './logs/snapshots.db'
+  config.database, // Use multi-database configuration
+  config.snapshotDbPath // Fallback for legacy configuration
 );
 
 // Initialize services
@@ -91,7 +92,13 @@ if (config.enableRequestLogging) {
   app.log.info(`Request log database: ${config.requestLogDbPath}`);
 }
 app.log.info(`Snapshot management enabled: true`);
-app.log.info(`Snapshot database: ${config.snapshotDbPath || './logs/snapshots.db'}`);
+app.log.info(`Database type: ${config.database?.type || 'sqlite (legacy)'}`);
+if (config.database?.type === 'sqlite' || !config.database) {
+  app.log.info(`Database path: ${config.database?.path || config.snapshotDbPath}`);
+} else {
+  app.log.info(`Database host: ${config.database.host}:${config.database.port}`);
+  app.log.info(`Database name: ${config.database.database}`);
+}
 
 // Register plugins
 await app.register(corsPlugin);

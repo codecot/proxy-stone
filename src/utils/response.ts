@@ -116,47 +116,63 @@ export function createErrorResponse(
   requestId?: string;
   details?: any;
 } {
-  const baseResponse = {
-    error: 'Proxy Error',
-    message: 'Failed to forward request to target server',
-    timestamp: new Date().toISOString(),
-    requestId: request?.id,
-  };
+  try {
+    const baseResponse = {
+      error: 'Proxy Error',
+      message: 'Failed to forward request to target server',
+      timestamp: new Date().toISOString(),
+      requestId: request?.id,
+    };
 
-  // Check for X-Debug-Error header to expose full error details
-  const debugMode = request?.headers['x-debug-error'] === 'true' && isDevelopment;
+    // Check for X-Debug-Error header to expose full error details
+    const debugMode = request?.headers['x-debug-error'] === 'true' && isDevelopment;
 
-  if (debugMode) {
-    const errorDetails =
-      error instanceof Error
-        ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            code: (error as any).code,
-            statusCode: (error as any).statusCode || (error as any).status,
-          }
-        : {
-            message: String(error),
-            type: typeof error,
-          };
+    if (debugMode) {
+      try {
+        const errorDetails =
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                code: (error as any).code,
+                statusCode: (error as any).statusCode || (error as any).status,
+              }
+            : {
+                message: String(error),
+                type: typeof error,
+              };
 
+        return {
+          ...baseResponse,
+          details: {
+            error: errorDetails,
+            environment: 'development',
+            debugMode: true,
+          },
+        };
+      } catch (detailsError) {
+        console.warn('Failed to create debug error details:', detailsError);
+        // Fall through to standard response
+      }
+    }
+
+    // In production or without debug header, return sanitized error
+    return baseResponse;
+  } catch (responseError) {
+    console.error('Failed to create error response:', responseError);
+    // Last resort fallback
     return {
-      ...baseResponse,
-      details: {
-        error: errorDetails,
-        environment: 'development',
-        debugMode: true,
-      },
+      error: 'Internal Error',
+      message: 'An unexpected error occurred',
+      timestamp: new Date().toISOString(),
+      requestId: request?.id,
     };
   }
-
-  // In production or without debug header, return sanitized error
-  return baseResponse;
 }
 
 /**
- * Enhanced error response for specific error types
+ * Enhanced error response for specific error types with comprehensive error handling
  */
 export function createSpecificErrorResponse(
   errorType: 'timeout' | 'network' | 'cache' | 'validation' | 'authentication' | 'unknown',
@@ -169,26 +185,75 @@ export function createSpecificErrorResponse(
   type: string;
   requestId?: string;
   retryable?: boolean;
+  details?: any;
 } {
-  const errorMessages = {
-    timeout: 'Request timeout - the target server took too long to respond',
-    network: 'Network error - unable to reach the target server',
-    cache: 'Cache operation failed - served from backup',
-    validation: 'Invalid request - please check your request parameters',
-    authentication: 'Authentication failed - please check your credentials',
-    unknown: 'An unexpected error occurred while processing your request',
-  };
+  try {
+    const errorMessages = {
+      timeout: 'Request timeout - the target server took too long to respond',
+      network: 'Network error - unable to reach the target server',
+      cache: 'Cache operation failed - served from backup',
+      validation: 'Invalid request - please check your request parameters',
+      authentication: 'Authentication failed - please check your credentials',
+      unknown: 'An unexpected error occurred while processing your request',
+    };
 
-  const retryableErrors = ['timeout', 'network', 'cache'];
+    const retryableErrors = ['timeout', 'network', 'cache'];
 
-  return {
-    error: 'Proxy Error',
-    message: errorMessages[errorType],
-    timestamp: new Date().toISOString(),
-    type: errorType,
-    requestId: request?.id,
-    retryable: retryableErrors.includes(errorType),
-  };
+    const baseResponse = {
+      error: 'Proxy Error',
+      message: errorMessages[errorType] || errorMessages.unknown,
+      timestamp: new Date().toISOString(),
+      type: errorType,
+      requestId: request?.id,
+      retryable: retryableErrors.includes(errorType),
+    };
+
+    // Add debug details if X-Debug-Error header is present and in development
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const debugMode = request?.headers['x-debug-error'] === 'true' && isDevelopment;
+
+    if (debugMode) {
+      try {
+        const errorDetails =
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                code: (error as any).code,
+              }
+            : {
+                message: String(error),
+                type: typeof error,
+              };
+
+        return {
+          ...baseResponse,
+          details: {
+            error: errorDetails,
+            errorType,
+            environment: 'development',
+            debugMode: true,
+          },
+        };
+      } catch (detailsError) {
+        console.warn('Failed to create debug error details for specific error:', detailsError);
+      }
+    }
+
+    return baseResponse;
+  } catch (responseError) {
+    console.error('Failed to create specific error response:', responseError);
+    // Fallback to basic error response
+    return {
+      error: 'Internal Error',
+      message: 'An unexpected error occurred',
+      timestamp: new Date().toISOString(),
+      type: 'unknown',
+      requestId: request?.id,
+      retryable: false,
+    };
+  }
 }
 
 /**
@@ -215,70 +280,146 @@ export function logSuccessResponse(
 }
 
 /**
- * Enhanced error logging with comprehensive context
+ * Enhanced error logging with comprehensive context and error handling
  */
 export function logErrorResponse(
   logger: any,
   errorContext: ErrorContext,
   errorType?: string
 ): void {
-  logger.error(
-    {
-      ...errorContext,
-      errorType: errorType || 'unknown',
-    },
-    'Error forwarding request to target server'
-  );
+  try {
+    if (!logger || typeof logger.error !== 'function') {
+      console.error('Invalid logger provided to logErrorResponse');
+      console.error('Error context:', errorContext);
+      return;
+    }
+
+    logger.error(
+      {
+        ...errorContext,
+        errorType: errorType || 'unknown',
+      },
+      'Error forwarding request to target server'
+    );
+  } catch (loggingError) {
+    // If logging fails, fall back to console
+    console.error('Failed to log error response:', loggingError);
+    console.error('Original error context:', errorContext);
+  }
 }
 
 /**
- * Categorize error types for better handling
+ * Safe error context creation that never throws
+ */
+export function safeCreateErrorContext(
+  error: unknown,
+  request: FastifyRequest,
+  processedRequest?: any,
+  cacheKey?: string
+): ErrorContext {
+  try {
+    return createErrorContext(error, request, processedRequest, cacheKey);
+  } catch (contextError) {
+    console.error('Failed to create error context:', contextError);
+
+    // Return minimal safe context
+    return {
+      request: {
+        method: request?.method || 'UNKNOWN',
+        originalUrl: request?.url || 'unknown',
+        targetUrl: processedRequest?.targetUrl || 'unknown',
+        cacheKey,
+        backendHost: 'unknown',
+        backendPath: 'unknown',
+        userAgent: request?.headers?.['user-agent'] || 'unknown',
+        clientIp: request?.ip || 'unknown',
+        headers: {},
+        query: {},
+        params: {},
+        body: undefined,
+      },
+      error: {
+        message: error instanceof Error ? error.message : String(error),
+        stack: undefined,
+        code: undefined,
+        type: 'ContextCreationError',
+        statusCode: undefined,
+      },
+      timestamp: new Date().toISOString(),
+      requestId: request?.id,
+    };
+  }
+}
+
+/**
+ * Categorize error types for better handling with comprehensive error handling
  */
 export function categorizeError(
   error: unknown
 ): 'timeout' | 'network' | 'cache' | 'validation' | 'authentication' | 'unknown' {
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    const code = (error as any).code;
-    const status = (error as any).statusCode || (error as any).status;
+  try {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      const code = (error as any).code;
+      const status = (error as any).statusCode || (error as any).status;
 
-    // Network/timeout errors
-    if (
-      message.includes('timeout') ||
-      message.includes('aborted') ||
-      code === 'ETIMEDOUT' ||
-      code === 'ECONNABORTED'
-    ) {
-      return 'timeout';
+      // Network/timeout errors
+      if (
+        message.includes('timeout') ||
+        message.includes('aborted') ||
+        code === 'ETIMEDOUT' ||
+        code === 'ECONNABORTED'
+      ) {
+        return 'timeout';
+      }
+
+      if (
+        message.includes('network') ||
+        message.includes('connection') ||
+        message.includes('enotfound') ||
+        message.includes('econnrefused') ||
+        code === 'ENOTFOUND' ||
+        code === 'ECONNREFUSED' ||
+        code === 'ENETUNREACH'
+      ) {
+        return 'network';
+      }
+
+      // Authentication errors
+      if (status === 401 || status === 403 || message.includes('auth')) {
+        return 'authentication';
+      }
+
+      // Validation errors
+      if (status === 400 || status === 422 || message.includes('validation')) {
+        return 'validation';
+      }
+
+      // Cache errors
+      if (message.includes('cache')) {
+        return 'cache';
+      }
     }
 
-    if (
-      message.includes('network') ||
-      message.includes('connection') ||
-      message.includes('enotfound') ||
-      message.includes('econnrefused') ||
-      code === 'ENOTFOUND' ||
-      code === 'ECONNREFUSED' ||
-      code === 'ENETUNREACH'
-    ) {
-      return 'network';
-    }
-
-    // Authentication errors
-    if (status === 401 || status === 403 || message.includes('auth')) {
-      return 'authentication';
-    }
-
-    // Validation errors
-    if (status === 400 || status === 422 || message.includes('validation')) {
-      return 'validation';
-    }
-
-    // Cache errors
-    if (message.includes('cache')) {
-      return 'cache';
-    }
+    return 'unknown';
+  } catch (categorizationError) {
+    console.warn('Failed to categorize error:', categorizationError);
+    return 'unknown';
   }
+}
 
-  return 'unknown';
+/**
+ * Safe wrapper for any response-related operation
+ */
+export function safeResponseOperation<T>(
+  operation: () => T,
+  fallback: T,
+  operationName: string
+): T {
+  try {
+    return operation();
+  } catch (error) {
+    console.error(`Response ${operationName} failed:`, error);
+    return fallback;
+  }
 }

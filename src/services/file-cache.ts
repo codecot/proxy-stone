@@ -20,51 +20,114 @@ export class FileCacheService {
   }
 
   /**
-   * Initialize file cache directory
+   * Safe wrapper for file operations that never throws
    */
-  async initialize(): Promise<void> {
-    if (!this.enabled) return;
+  private async safeFileOperation<T>(
+    operation: () => Promise<T>,
+    fallback: T,
+    operationName: string,
+    context?: any
+  ): Promise<T> {
+    if (!this.enabled) {
+      return fallback;
+    }
 
     try {
-      await fs.mkdir(this.cacheDir, { recursive: true });
+      return await operation();
     } catch (error) {
-      console.error('Failed to create cache directory:', error);
-      this.enabled = false;
+      console.error(`File cache ${operationName} failed:`, {
+        error: error instanceof Error ? error.message : String(error),
+        context,
+        cacheDir: this.cacheDir,
+        timestamp: new Date().toISOString(),
+      });
+      return fallback;
     }
   }
 
   /**
-   * Generate a safe filename from cache key
+   * Initialize file cache directory with comprehensive error handling
+   */
+  async initialize(): Promise<void> {
+    if (!this.enabled) return;
+
+    await this.safeFileOperation(
+      async () => {
+        await fs.mkdir(this.cacheDir, { recursive: true });
+
+        // Test write permissions
+        const testFile = path.join(this.cacheDir, '.test-write');
+        try {
+          await fs.writeFile(testFile, 'test', 'utf8');
+          await fs.unlink(testFile);
+        } catch (error) {
+          console.error('File cache directory is not writable:', error);
+          this.enabled = false;
+          throw error;
+        }
+      },
+      undefined,
+      'initialization'
+    );
+  }
+
+  /**
+   * Generate a safe filename from cache key with error handling
    */
   private generateFileName(cacheKey: string): string {
-    // Create a hash for very long keys to avoid filesystem limits
-    const hash = crypto.createHash('sha256').update(cacheKey).digest('hex');
+    try {
+      // Create a hash for very long keys to avoid filesystem limits
+      const hash = crypto.createHash('sha256').update(cacheKey).digest('hex');
 
-    // Also create a readable prefix (first 50 chars, sanitized)
-    const prefix = cacheKey.substring(0, 50).replace(/[^a-zA-Z0-9-_]/g, '_');
+      // Also create a readable prefix (first 50 chars, sanitized)
+      const prefix = cacheKey.substring(0, 50).replace(/[^a-zA-Z0-9-_]/g, '_');
 
-    return `${prefix}_${hash.substring(0, 16)}.json`;
+      return `${prefix}_${hash.substring(0, 16)}.json`;
+    } catch (error) {
+      console.warn('Failed to generate filename, using fallback:', error);
+      // Fallback to simple hash
+      try {
+        const fallbackHash = crypto.createHash('md5').update(cacheKey).digest('hex');
+        return `fallback_${fallbackHash}.json`;
+      } catch (fallbackError) {
+        console.error('Fallback filename generation failed:', fallbackError);
+        // Last resort: timestamp-based filename
+        return `emergency_${Date.now()}_${Math.random().toString(36).substring(2)}.json`;
+      }
+    }
   }
 
   /**
-   * Get full file path for cache key
+   * Get full file path for cache key with error handling
    */
   private getFilePath(cacheKey: string): string {
-    const fileName = this.generateFileName(cacheKey);
-    return path.join(this.cacheDir, fileName);
+    try {
+      const fileName = this.generateFileName(cacheKey);
+      return path.join(this.cacheDir, fileName);
+    } catch (error) {
+      console.error('Failed to generate file path:', error);
+      // Return a safe fallback path
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+      return path.join(this.cacheDir, `fallback_${safeKey}_${Date.now()}.json`);
+    }
   }
 
   /**
-   * Check if cache entry is expired
+   * Check if cache entry is expired with error handling
    */
   private isExpired(entry: FileCacheEntry): boolean {
-    const now = Date.now();
-    const expiresAt = entry.createdAt + entry.ttl * 1000;
-    return now > expiresAt;
+    try {
+      const now = Date.now();
+      const expiresAt = entry.createdAt + entry.ttl * 1000;
+      return now > expiresAt;
+    } catch (error) {
+      console.warn('Failed to check expiry, treating as expired:', error);
+      return true; // Treat as expired if we can't determine
+    }
   }
 
   /**
-   * Save cache entry to file
+   * Save cache entry to file with comprehensive error handling
    */
   async set(
     cacheKey: string,
@@ -73,172 +136,324 @@ export class FileCacheService {
     status: number,
     ttl: number
   ): Promise<void> {
-    if (!this.enabled) return;
+    await this.safeFileOperation(
+      async () => {
+        const entry: FileCacheEntry = {
+          data,
+          headers,
+          status,
+          createdAt: Date.now(),
+          ttl,
+        };
 
-    const entry: FileCacheEntry = {
-      data,
-      headers,
-      status,
-      createdAt: Date.now(),
-      ttl,
-    };
+        const filePath = this.getFilePath(cacheKey);
 
-    try {
-      const filePath = this.getFilePath(cacheKey);
-      await fs.writeFile(filePath, JSON.stringify(entry, null, 2), 'utf8');
-    } catch (error) {
-      console.error('Failed to write cache file:', error);
-    }
+        // Ensure directory exists
+        try {
+          const dir = path.dirname(filePath);
+          await fs.mkdir(dir, { recursive: true });
+        } catch (error) {
+          console.warn('Failed to ensure directory exists:', error);
+          // Continue anyway, might still work
+        }
+
+        // Serialize data safely
+        let serializedData: string;
+        try {
+          serializedData = JSON.stringify(entry, null, 2);
+        } catch (serializationError) {
+          console.error('Failed to serialize cache entry:', serializationError);
+          // Try without pretty printing
+          try {
+            serializedData = JSON.stringify(entry);
+          } catch (fallbackError) {
+            console.error(
+              'Failed to serialize cache entry even without formatting:',
+              fallbackError
+            );
+            throw fallbackError;
+          }
+        }
+
+        // Write to temporary file first, then rename for atomic operation
+        const tempPath = `${filePath}.tmp`;
+        try {
+          await fs.writeFile(tempPath, serializedData, 'utf8');
+          await fs.rename(tempPath, filePath);
+        } catch (error) {
+          // Clean up temp file if it exists
+          try {
+            await fs.unlink(tempPath);
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
+          throw error;
+        }
+      },
+      undefined,
+      'set',
+      { cacheKey, status, ttl }
+    );
   }
 
   /**
-   * Get cache entry from file
+   * Get cache entry from file with comprehensive error handling
    */
   async get(cacheKey: string): Promise<FileCacheEntry | null> {
-    if (!this.enabled) return null;
+    return this.safeFileOperation(
+      async () => {
+        const filePath = this.getFilePath(cacheKey);
 
-    try {
-      const filePath = this.getFilePath(cacheKey);
-      const fileContent = await fs.readFile(filePath, 'utf8');
-      const entry: FileCacheEntry = JSON.parse(fileContent);
+        let fileContent: string;
+        try {
+          fileContent = await fs.readFile(filePath, 'utf8');
+        } catch (error) {
+          // File doesn't exist or can't be read
+          return null;
+        }
 
-      // Check if expired
-      if (this.isExpired(entry)) {
-        // Delete expired file
-        await this.delete(cacheKey);
-        return null;
-      }
+        let entry: FileCacheEntry;
+        try {
+          entry = JSON.parse(fileContent);
+        } catch (parseError) {
+          console.warn('Failed to parse cache file, removing corrupted file:', parseError);
+          // Remove corrupted file
+          try {
+            await fs.unlink(filePath);
+          } catch (unlinkError) {
+            console.warn('Failed to remove corrupted cache file:', unlinkError);
+          }
+          return null;
+        }
 
-      return entry;
-    } catch (error) {
-      // File doesn't exist or is corrupted
-      return null;
-    }
+        // Validate entry structure
+        if (
+          !entry ||
+          typeof entry !== 'object' ||
+          typeof entry.createdAt !== 'number' ||
+          typeof entry.ttl !== 'number'
+        ) {
+          console.warn('Invalid cache entry structure, removing file');
+          try {
+            await fs.unlink(filePath);
+          } catch (unlinkError) {
+            console.warn('Failed to remove invalid cache file:', unlinkError);
+          }
+          return null;
+        }
+
+        // Check if expired
+        if (this.isExpired(entry)) {
+          // Delete expired file
+          await this.safeFileOperation(() => this.delete(cacheKey), undefined, 'delete-expired', {
+            cacheKey,
+          });
+          return null;
+        }
+
+        return entry;
+      },
+      null,
+      'get',
+      { cacheKey }
+    );
   }
 
   /**
-   * Delete cache entry file
+   * Delete cache entry file with comprehensive error handling
    */
   async delete(cacheKey: string): Promise<void> {
-    if (!this.enabled) return;
-
-    try {
-      const filePath = this.getFilePath(cacheKey);
-      await fs.unlink(filePath);
-    } catch (error) {
-      // File might not exist, ignore error
-    }
+    await this.safeFileOperation(
+      async () => {
+        const filePath = this.getFilePath(cacheKey);
+        await fs.unlink(filePath);
+      },
+      undefined,
+      'delete',
+      { cacheKey }
+    );
   }
 
   /**
-   * Get all cache files
+   * Get all cache files with comprehensive error handling
    */
   async getAllFiles(): Promise<string[]> {
-    if (!this.enabled) return [];
-
-    try {
-      const files = await fs.readdir(this.cacheDir);
-      return files.filter((file) => file.endsWith('.json'));
-    } catch (error) {
-      return [];
-    }
+    return this.safeFileOperation(
+      async () => {
+        const files = await fs.readdir(this.cacheDir);
+        return files.filter((file) => file.endsWith('.json') && !file.endsWith('.tmp'));
+      },
+      [],
+      'get-all-files'
+    );
   }
 
   /**
-   * Get cache statistics
+   * Get cache statistics with comprehensive error handling
    */
   async getStats(): Promise<{ size: number; files: string[] }> {
-    const files = await this.getAllFiles();
-    return {
-      size: files.length,
-      files: files.slice(0, 10), // Return first 10 for preview
-    };
+    return this.safeFileOperation(
+      async () => {
+        const files = await this.getAllFiles();
+        return {
+          size: files.length,
+          files: files.slice(0, 10), // Return first 10 for preview
+        };
+      },
+      { size: 0, files: [] },
+      'get-stats'
+    );
   }
 
   /**
-   * Clean expired cache files
+   * Clean expired cache files with comprehensive error handling
    */
   async cleanExpired(): Promise<number> {
-    if (!this.enabled) return 0;
+    return this.safeFileOperation(
+      async () => {
+        const files = await this.getAllFiles();
+        let cleaned = 0;
 
-    const files = await this.getAllFiles();
-    let cleaned = 0;
+        for (const file of files) {
+          await this.safeFileOperation(
+            async () => {
+              const filePath = path.join(this.cacheDir, file);
 
-    for (const file of files) {
-      try {
-        const filePath = path.join(this.cacheDir, file);
-        const fileContent = await fs.readFile(filePath, 'utf8');
-        const entry: FileCacheEntry = JSON.parse(fileContent);
+              let fileContent: string;
+              try {
+                fileContent = await fs.readFile(filePath, 'utf8');
+              } catch (error) {
+                // File might have been deleted or is unreadable, skip
+                return;
+              }
 
-        if (this.isExpired(entry)) {
-          await fs.unlink(filePath);
-          cleaned++;
+              let entry: FileCacheEntry;
+              try {
+                entry = JSON.parse(fileContent);
+              } catch (parseError) {
+                // File is corrupted, delete it
+                try {
+                  await fs.unlink(filePath);
+                  cleaned++;
+                } catch (deleteError) {
+                  console.warn('Failed to delete corrupted cache file:', deleteError);
+                }
+                return;
+              }
+
+              // Check if expired
+              if (this.isExpired(entry)) {
+                try {
+                  await fs.unlink(filePath);
+                  cleaned++;
+                } catch (deleteError) {
+                  console.warn('Failed to delete expired cache file:', deleteError);
+                }
+              }
+            },
+            undefined,
+            'clean-file',
+            { file }
+          );
         }
-      } catch (error) {
-        // File might be corrupted, delete it
-        try {
-          await fs.unlink(path.join(this.cacheDir, file));
-          cleaned++;
-        } catch (deleteError) {
-          // Ignore delete errors
-        }
-      }
-    }
 
-    return cleaned;
+        return cleaned;
+      },
+      0,
+      'clean-expired'
+    );
   }
 
   /**
-   * Clear all cache files
+   * Clear all cache files with comprehensive error handling
    */
   async clear(): Promise<number> {
-    if (!this.enabled) return 0;
+    return this.safeFileOperation(
+      async () => {
+        const files = await this.getAllFiles();
+        let cleared = 0;
 
-    const files = await this.getAllFiles();
-    let cleared = 0;
+        for (const file of files) {
+          await this.safeFileOperation(
+            async () => {
+              const filePath = path.join(this.cacheDir, file);
+              await fs.unlink(filePath);
+              cleared++;
+            },
+            undefined,
+            'clear-file',
+            { file }
+          );
+        }
 
-    for (const file of files) {
-      try {
-        await fs.unlink(path.join(this.cacheDir, file));
-        cleared++;
-      } catch (error) {
-        // Ignore delete errors
-      }
-    }
-
-    return cleared;
+        return cleared;
+      },
+      0,
+      'clear'
+    );
   }
 
   /**
-   * Load cache from files into memory cache
+   * Load cache entries into memory cache with comprehensive error handling
    */
   async loadIntoMemoryCache(memoryCache: Map<string, any>): Promise<number> {
-    if (!this.enabled) return 0;
+    return this.safeFileOperation(
+      async () => {
+        const files = await this.getAllFiles();
+        let loaded = 0;
 
-    const files = await this.getAllFiles();
-    let loaded = 0;
+        for (const file of files) {
+          await this.safeFileOperation(
+            async () => {
+              const filePath = path.join(this.cacheDir, file);
 
-    for (const file of files) {
-      try {
-        const filePath = path.join(this.cacheDir, file);
-        const fileContent = await fs.readFile(filePath, 'utf8');
-        const entry: FileCacheEntry = JSON.parse(fileContent);
+              let fileContent: string;
+              try {
+                fileContent = await fs.readFile(filePath, 'utf8');
+              } catch (error) {
+                return; // Skip unreadable files
+              }
 
-        // Skip expired entries
-        if (this.isExpired(entry)) {
-          await fs.unlink(filePath);
-          continue;
+              let entry: FileCacheEntry;
+              try {
+                entry = JSON.parse(fileContent);
+              } catch (parseError) {
+                console.warn('Skipping corrupted cache file during load:', parseError);
+                return;
+              }
+
+              // Skip expired entries
+              if (this.isExpired(entry)) {
+                return;
+              }
+
+              // Extract cache key from filename (this is approximate)
+              const cacheKey = file.replace('.json', '').split('_')[0];
+
+              // Convert to memory cache format
+              const memoryEntry = {
+                data: entry.data,
+                headers: entry.headers,
+                status: entry.status,
+                createdAt: entry.createdAt,
+                ttl: entry.ttl,
+                accessCount: 0,
+                lastAccessed: Date.now(),
+              };
+
+              memoryCache.set(cacheKey, memoryEntry);
+              loaded++;
+            },
+            undefined,
+            'load-file',
+            { file }
+          );
         }
 
-        // Reconstruct cache key from filename (this is tricky, we'll need to store it in the file)
-        // For now, we'll add the cacheKey to the file content
-        // This will be improved in the next iteration
-        loaded++;
-      } catch (error) {
-        // Skip corrupted files
-      }
-    }
-
-    return loaded;
+        return loaded;
+      },
+      0,
+      'load-into-memory'
+    );
   }
 }
