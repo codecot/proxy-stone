@@ -17,6 +17,8 @@ import { MetricsService } from './services/metrics.js';
 import { RecoveryService } from './services/recovery.js';
 import { ErrorTrackerService } from './services/error-tracker.js';
 import type { FastifyRequest } from 'fastify';
+import ajvFormats from 'ajv-formats';
+import ajvKeywords from 'ajv-keywords';
 
 interface RateLimitContext {
   after: string;
@@ -50,7 +52,7 @@ const app: AppInstance = fastify({
       useDefaults: true,
       allErrors: true,
     },
-    plugins: [require('ajv-formats'), require('ajv-keywords')],
+    plugins: [ajvFormats.default || ajvFormats, ajvKeywords.default || ajvKeywords],
   },
 });
 
@@ -81,15 +83,16 @@ const cacheService = new CacheService(
 
 // Initialize request logger service
 const requestLoggerService = new RequestLoggerService(
+  app,
   config.enableRequestLogging,
   config.requestLogDbPath
 );
 
 // Initialize snapshot manager service
 const snapshotManager = new SnapshotManager(
+  app,
   true, // Enable snapshot management
-  config.database, // Use multi-database configuration
-  config.snapshotDbPath // Fallback for legacy configuration
+  config.snapshotDbPath // Use snapshot database path
 );
 
 // Initialize auth service
