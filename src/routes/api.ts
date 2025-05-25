@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
-import { ApiResponse } from '../types/index.js';
+import { ApiResponse, normalizeHeaders } from '../types/index.js';
 
 // Define a generic type for params for our wildcard route
 interface WildcardRouteParams {
@@ -37,7 +37,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
       const response: ApiResponse = {
         method,
         url, // Full URL as requested
-        headers: headers as Record<string, string>,
+        headers: normalizeHeaders(headers),
         body,
         query,
         params,
