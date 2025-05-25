@@ -634,4 +634,49 @@ export async function cacheRoutes(fastify: FastifyInstance) {
       }
     }
   );
+
+  // Invalidate cache by pattern
+  fastify.post('/cache/invalidate/pattern', async (request, reply) => {
+    const { pattern } = request.body as { pattern: string };
+    if (!pattern) {
+      reply.status(400);
+      return { error: 'Pattern is required' };
+    }
+
+    const invalidated = await fastify.cache.invalidateByPattern(pattern);
+    return {
+      message: `Invalidated cache entries matching pattern: ${pattern}`,
+      invalidated,
+    };
+  });
+
+  // Invalidate cache by age
+  fastify.post('/cache/invalidate/age', async (request, reply) => {
+    const { ageInSeconds } = request.body as { ageInSeconds: number };
+    if (!ageInSeconds || ageInSeconds <= 0) {
+      reply.status(400);
+      return { error: 'Valid ageInSeconds is required' };
+    }
+
+    const invalidated = await fastify.cache.invalidateOlderThan(ageInSeconds);
+    return {
+      message: `Invalidated cache entries older than ${ageInSeconds} seconds`,
+      invalidated,
+    };
+  });
+
+  // Invalidate cache by tags
+  fastify.post('/cache/invalidate/tags', async (request, reply) => {
+    const { tags } = request.body as { tags: string[] };
+    if (!tags || !Array.isArray(tags) || tags.length === 0) {
+      reply.status(400);
+      return { error: 'Valid tags array is required' };
+    }
+
+    const invalidated = await fastify.cache.invalidateByTags(tags);
+    return {
+      message: `Invalidated cache entries with tags: ${tags.join(', ')}`,
+      invalidated,
+    };
+  });
 }

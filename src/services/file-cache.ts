@@ -1,6 +1,7 @@
-import { promises as fs } from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { minimatch } from 'minimatch';
 
 export interface FileCacheEntry {
   data: unknown;
@@ -8,6 +9,14 @@ export interface FileCacheEntry {
   status: number;
   createdAt: number;
   ttl: number;
+  accessCount?: number;
+  lastAccessed?: number;
+}
+
+interface PriorityOptions {
+  patterns?: Array<{ pattern: string; priority: number }>;
+  byLastAccess?: boolean;
+  maxEntries?: number;
 }
 
 export class FileCacheService {
@@ -396,64 +405,99 @@ export class FileCacheService {
   /**
    * Load cache entries into memory cache with comprehensive error handling
    */
-  async loadIntoMemoryCache(memoryCache: Map<string, any>): Promise<number> {
-    return this.safeFileOperation(
-      async () => {
-        const files = await this.getAllFiles();
-        let loaded = 0;
+  async loadIntoMemoryCache(
+    memoryCache: Map<string, FileCacheEntry>,
+    options: { priority?: PriorityOptions } = {}
+  ): Promise<number> {
+    if (!this.enabled) {
+      return 0;
+    }
 
-        for (const file of files) {
-          await this.safeFileOperation(
-            async () => {
-              const filePath = path.join(this.cacheDir, file);
+    try {
+      const files = await fs.readdir(this.cacheDir);
+      let loadedCount = 0;
+      const entries: Array<[string, FileCacheEntry]> = [];
 
-              let fileContent: string;
-              try {
-                fileContent = await fs.readFile(filePath, 'utf8');
-              } catch (error) {
-                return; // Skip unreadable files
-              }
+      // Load all entries first
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
 
-              let entry: FileCacheEntry;
-              try {
-                entry = JSON.parse(fileContent);
-              } catch (parseError) {
-                console.warn('Skipping corrupted cache file during load:', parseError);
-                return;
-              }
+        try {
+          const data = await fs.readFile(path.join(this.cacheDir, file), 'utf-8');
+          const entry = JSON.parse(data) as FileCacheEntry;
+          const key = file.replace('.json', '');
 
-              // Skip expired entries
-              if (this.isExpired(entry)) {
-                return;
-              }
+          // Convert to memory cache format
+          const cacheEntry: FileCacheEntry = {
+            data: entry.data,
+            headers: entry.headers,
+            status: entry.status,
+            createdAt: entry.createdAt,
+            ttl: entry.ttl,
+            accessCount: entry.accessCount || 0,
+            lastAccessed: entry.lastAccessed || entry.createdAt,
+          };
 
-              // Extract cache key from filename (this is approximate)
-              const cacheKey = file.replace('.json', '').split('_')[0];
-
-              // Convert to memory cache format
-              const memoryEntry = {
-                data: entry.data,
-                headers: entry.headers,
-                status: entry.status,
-                createdAt: entry.createdAt,
-                ttl: entry.ttl,
-                accessCount: 0,
-                lastAccessed: Date.now(),
-              };
-
-              memoryCache.set(cacheKey, memoryEntry);
-              loaded++;
-            },
-            undefined,
-            'load-file',
-            { file }
-          );
+          entries.push([key, cacheEntry]);
+        } catch (error) {
+          console.warn(`Failed to load cache file ${file}:`, error);
         }
+      }
 
-        return loaded;
-      },
-      0,
-      'load-into-memory'
-    );
+      // Apply priority sorting if specified
+      const priority = options.priority;
+      if (priority) {
+        entries.sort(([, a], [, b]) => {
+          // Sort by pattern priority first
+          if (priority.patterns) {
+            const aPriority = this.getPatternPriority(a, priority.patterns);
+            const bPriority = this.getPatternPriority(b, priority.patterns);
+            if (aPriority !== bPriority) {
+              return bPriority - aPriority;
+            }
+          }
+
+          // Then by last access time if specified
+          if (priority.byLastAccess) {
+            const aTime = a.lastAccessed || a.createdAt;
+            const bTime = b.lastAccessed || b.createdAt;
+            return bTime - aTime;
+          }
+
+          return 0;
+        });
+
+        // Apply max entries limit if specified
+        if (priority.maxEntries) {
+          entries.splice(priority.maxEntries);
+        }
+      }
+
+      // Load entries into memory cache
+      for (const [key, entry] of entries) {
+        if (!this.isExpired(entry)) {
+          memoryCache.set(key, entry);
+          loadedCount++;
+        }
+      }
+
+      return loadedCount;
+    } catch (error) {
+      console.error('Failed to load cache files:', error);
+      return 0;
+    }
+  }
+
+  private getPatternPriority(
+    entry: FileCacheEntry,
+    patterns: Array<{ pattern: string; priority: number }>
+  ): number {
+    const url = entry.headers['x-original-url'] || '';
+    for (const { pattern, priority } of patterns) {
+      if (minimatch(url, pattern)) {
+        return priority;
+      }
+    }
+    return 0;
   }
 }

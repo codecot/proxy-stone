@@ -1,3 +1,5 @@
+import type { FastifyInstance } from 'fastify';
+import { DatabaseError } from '../types/errors.js';
 import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
 import path from 'path';
@@ -105,465 +107,187 @@ interface CountRow {
 }
 
 export class RequestLoggerService {
-  private db: sqlite3.Database | null = null;
-  private enabled: boolean = false;
+  private app: FastifyInstance;
+  private enabled: boolean;
   private dbPath: string;
+  private db: any;
   private maxBodySize: number = 10000; // Max body size to store (10KB)
 
-  constructor(enabled: boolean = false, dbPath: string = './logs/requests.db') {
+  constructor(app: FastifyInstance, enabled: boolean, dbPath: string) {
+    this.app = app;
     this.enabled = enabled;
     this.dbPath = dbPath;
   }
 
-  /**
-   * Initialize the database and create tables
-   */
   async initialize(): Promise<void> {
     if (!this.enabled) return;
 
     try {
-      // Ensure directory exists
-      const dbDir = path.dirname(this.dbPath);
-      await fs.mkdir(dbDir, { recursive: true });
+      await this.app?.recovery.withRetry(
+        async () => {
+          const sqlite3 = await import('sqlite3');
+          const { open } = await import('sqlite');
 
-      // Create database connection
-      this.db = new sqlite3.Database(this.dbPath);
+          this.db = await open({
+            filename: this.dbPath,
+            driver: sqlite3.Database,
+          });
 
-      // Promisify database methods
-      const run = promisify(this.db.run.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<sqlite3.RunResult>;
-
-      // Create requests table with enhanced schema
-      await run(`
-        CREATE TABLE IF NOT EXISTS requests (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-          method TEXT NOT NULL,
-          original_url TEXT NOT NULL,
-          target_url TEXT NOT NULL,
-          -- Enhanced backend tracking
-          backend_host TEXT,
-          backend_path TEXT,
-          status_code INTEGER NOT NULL,
-          response_time REAL NOT NULL,
-          -- Enhanced performance metrics
-          dns_timing REAL,
-          connect_timing REAL,
-          ttfb_timing REAL,
-          processing_time REAL,
-          request_headers TEXT,
-          response_headers TEXT,
-          request_body TEXT,
-          response_body TEXT,
-          -- Enhanced parameter tracking
-          query_params TEXT,
-          route_params TEXT,
-          cache_hit BOOLEAN DEFAULT FALSE,
-          cache_key TEXT,
-          cache_ttl INTEGER,
-          user_agent TEXT,
-          client_ip TEXT,
-          error_message TEXT,
-          -- Enhanced request context
-          request_size INTEGER,
-          response_size INTEGER,
-          content_type TEXT,
-          response_content_type TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Migration for existing databases - add new columns if they don't exist
-      const columnsToAdd = [
-        { name: 'cache_key', type: 'TEXT' },
-        { name: 'backend_host', type: 'TEXT' },
-        { name: 'backend_path', type: 'TEXT' },
-        { name: 'dns_timing', type: 'REAL' },
-        { name: 'connect_timing', type: 'REAL' },
-        { name: 'ttfb_timing', type: 'REAL' },
-        { name: 'processing_time', type: 'REAL' },
-        { name: 'query_params', type: 'TEXT' },
-        { name: 'route_params', type: 'TEXT' },
-        { name: 'cache_ttl', type: 'INTEGER' },
-        { name: 'request_size', type: 'INTEGER' },
-        { name: 'response_size', type: 'INTEGER' },
-        { name: 'content_type', type: 'TEXT' },
-        { name: 'response_content_type', type: 'TEXT' },
-      ];
-
-      for (const column of columnsToAdd) {
-        try {
-          await run(`ALTER TABLE requests ADD COLUMN ${column.name} ${column.type}`);
-        } catch (error) {
-          // Column already exists, ignore error
-        }
-      }
-
-      // Create indexes for better query performance
-      await run('CREATE INDEX IF NOT EXISTS idx_timestamp ON requests(timestamp)');
-      await run('CREATE INDEX IF NOT EXISTS idx_method ON requests(method)');
-      await run('CREATE INDEX IF NOT EXISTS idx_status_code ON requests(status_code)');
-      await run('CREATE INDEX IF NOT EXISTS idx_target_url ON requests(target_url)');
-      await run('CREATE INDEX IF NOT EXISTS idx_backend_host ON requests(backend_host)');
-      await run('CREATE INDEX IF NOT EXISTS idx_cache_key ON requests(cache_key)');
-      await run('CREATE INDEX IF NOT EXISTS idx_cache_hit ON requests(cache_hit)');
-      await run('CREATE INDEX IF NOT EXISTS idx_response_time ON requests(response_time)');
-
-      console.log('Request logger database initialized successfully');
+          await this.db.exec(`
+            CREATE TABLE IF NOT EXISTS requests (
+              id TEXT PRIMARY KEY,
+              method TEXT,
+              url TEXT,
+              headers TEXT,
+              body TEXT,
+              query TEXT,
+              params TEXT,
+              timestamp TEXT,
+              duration INTEGER,
+              status INTEGER,
+              error TEXT
+            )
+          `);
+        },
+        'database',
+        { operation: 'request-logger-initialization' }
+      );
     } catch (error) {
-      console.error('Failed to initialize request logger database:', error);
-      this.enabled = false;
+      this.app?.errorTracker.trackError(
+        error,
+        {
+          operation: 'request-logger.initialize',
+          context: { dbPath: this.dbPath },
+        },
+        ['critical']
+      );
+      throw new DatabaseError(
+        'Failed to initialize request logger database',
+        'DATABASE_INIT_ERROR',
+        500,
+        { dbPath: this.dbPath }
+      );
     }
   }
 
-  /**
-   * Log a request/response
-   */
-  async logRequest(data: {
-    method: string;
-    originalUrl: string;
-    targetUrl: string;
-    // Enhanced backend tracking
-    backendHost?: string;
-    backendPath?: string;
-    statusCode: number;
-    responseTime: number;
-    // Enhanced performance metrics
-    dnsTiming?: number;
-    connectTiming?: number;
-    ttfbTiming?: number;
-    processingTime?: number;
-    requestHeaders: Record<string, any>;
-    responseHeaders: Record<string, any>;
-    requestBody?: any;
-    responseBody?: any;
-    // Enhanced parameter tracking
-    queryParams?: Record<string, any>;
-    routeParams?: Record<string, any>;
-    cacheHit: boolean;
-    cacheKey?: string;
-    cacheTTL?: number;
-    userAgent?: string;
-    clientIp?: string;
-    errorMessage?: string;
-    // Enhanced request context
-    requestSize?: number;
-    responseSize?: number;
-    contentType?: string;
-    responseContentType?: string;
-  }): Promise<void> {
+  async logRequest(request: any, duration: number, error?: Error): Promise<void> {
     if (!this.enabled || !this.db) return;
 
     try {
-      const run = promisify(this.db.run.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<sqlite3.RunResult>;
+      await this.app?.recovery.withRetry(
+        async () => {
+          const { id, method, url, headers, body, query, params } = request;
 
-      // Truncate large bodies
-      const requestBodyStr = this.truncateBody(data.requestBody);
-      const responseBodyStr = this.truncateBody(data.responseBody);
-
-      await run(
-        `
-        INSERT INTO requests (
-          method, original_url, target_url, backend_host, backend_path,
-          status_code, response_time, dns_timing, connect_timing, ttfb_timing, processing_time,
-          request_headers, response_headers, request_body, response_body,
-          query_params, route_params, cache_hit, cache_key, cache_ttl,
-          user_agent, client_ip, error_message,
-          request_size, response_size, content_type, response_content_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        [
-          data.method,
-          data.originalUrl,
-          data.targetUrl,
-          data.backendHost || null,
-          data.backendPath || null,
-          data.statusCode,
-          data.responseTime,
-          data.dnsTiming || null,
-          data.connectTiming || null,
-          data.ttfbTiming || null,
-          data.processingTime || null,
-          JSON.stringify(data.requestHeaders),
-          JSON.stringify(data.responseHeaders),
-          requestBodyStr,
-          responseBodyStr,
-          data.queryParams ? JSON.stringify(data.queryParams) : null,
-          data.routeParams ? JSON.stringify(data.routeParams) : null,
-          data.cacheHit ? 1 : 0,
-          data.cacheKey,
-          data.cacheTTL || null,
-          data.userAgent,
-          data.clientIp,
-          data.errorMessage,
-          data.requestSize || null,
-          data.responseSize || null,
-          data.contentType || null,
-          data.responseContentType || null,
-        ]
+          await this.db.run(
+            `INSERT INTO requests (
+              id, method, url, headers, body, query, params,
+              timestamp, duration, status, error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              id,
+              method,
+              url,
+              JSON.stringify(headers),
+              JSON.stringify(body),
+              JSON.stringify(query),
+              JSON.stringify(params),
+              new Date().toISOString(),
+              duration,
+              error ? 500 : 200,
+              error ? error.message : null,
+            ]
+          );
+        },
+        'database',
+        { operation: 'request-logger.log' }
       );
     } catch (error) {
-      console.error('Failed to log request:', error);
+      this.app?.errorTracker.trackError(error, {
+        operation: 'request-logger.log',
+        context: { requestId: request.id },
+      });
+      // Don't throw - logging failures shouldn't affect the main request flow
     }
   }
 
-  /**
-   * Get requests with optional filtering
-   */
-  async getRequests(filters: RequestFilters = {}): Promise<LoggedRequest[]> {
-    if (!this.enabled || !this.db) return [];
-
-    try {
-      const all = promisify(this.db.all.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<DbRow[]>;
-
-      let query = 'SELECT * FROM requests WHERE 1=1';
-      const params: any[] = [];
-
-      // Add filters
-      if (filters.method) {
-        query += ' AND method = ?';
-        params.push(filters.method);
-      }
-
-      if (filters.statusCode) {
-        query += ' AND status_code = ?';
-        params.push(filters.statusCode);
-      }
-
-      if (filters.dateFrom) {
-        query += ' AND timestamp >= ?';
-        params.push(filters.dateFrom);
-      }
-
-      if (filters.dateTo) {
-        query += ' AND timestamp <= ?';
-        params.push(filters.dateTo);
-      }
-
-      if (filters.url) {
-        query += ' AND (original_url LIKE ? OR target_url LIKE ?)';
-        params.push(`%${filters.url}%`, `%${filters.url}%`);
-      }
-
-      if (filters.cacheHit !== undefined) {
-        query += ' AND cache_hit = ?';
-        params.push(filters.cacheHit ? 1 : 0);
-      }
-
-      if (filters.cacheKey) {
-        query += ' AND cache_key = ?';
-        params.push(filters.cacheKey);
-      }
-
-      // Order by newest first
-      query += ' ORDER BY timestamp DESC';
-
-      // Add pagination
-      if (filters.limit) {
-        query += ' LIMIT ?';
-        params.push(filters.limit);
-      }
-
-      if (filters.offset) {
-        query += ' OFFSET ?';
-        params.push(filters.offset);
-      }
-
-      const rows = await all(query, params);
-
-      return rows.map(this.mapRowToRequest);
-    } catch (error) {
-      console.error('Failed to get requests:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get request statistics
-   */
-  async getStats(): Promise<RequestStats> {
+  async getStats(): Promise<any> {
     if (!this.enabled || !this.db) {
-      return {
-        totalRequests: 0,
-        cacheHitRate: 0,
-        avgResponseTime: 0,
-        requestsByMethod: {},
-        requestsByStatus: {},
-        topUrls: [],
-        topCacheKeys: [],
-      };
+      return { enabled: false };
     }
 
     try {
-      const get = promisify(this.db.get.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<StatsRow>;
-      const all = promisify(this.db.all.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<CountRow[]>;
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const total = await this.db.get('SELECT COUNT(*) as count FROM requests');
+          const errors = await this.db.get(
+            'SELECT COUNT(*) as count FROM requests WHERE error IS NOT NULL'
+          );
+          const avgDuration = await this.db.get('SELECT AVG(duration) as avg FROM requests');
 
-      // Total requests and cache hit rate
-      const totalStats = await get(`
-        SELECT 
-          COUNT(*) as total,
-          AVG(CASE WHEN cache_hit = 1 THEN 1.0 ELSE 0.0 END) * 100 as cache_hit_rate,
-          AVG(response_time) as avg_response_time
-        FROM requests
-      `);
-
-      // Requests by method
-      const methodStats = await all(`
-        SELECT method, COUNT(*) as count 
-        FROM requests 
-        GROUP BY method 
-        ORDER BY count DESC
-      `);
-
-      // Requests by status code
-      const statusStats = await all(`
-        SELECT status_code, COUNT(*) as count 
-        FROM requests 
-        GROUP BY status_code 
-        ORDER BY count DESC
-      `);
-
-      // Top URLs
-      const urlStats = await all(`
-        SELECT target_url as url, COUNT(*) as count 
-        FROM requests 
-        GROUP BY target_url 
-        ORDER BY count DESC 
-        LIMIT 10
-      `);
-
-      // Top cache keys (most frequently used)
-      const cacheKeyStats = await all(`
-        SELECT cache_key, COUNT(*) as count 
-        FROM requests 
-        WHERE cache_key IS NOT NULL
-        GROUP BY cache_key 
-        ORDER BY count DESC 
-        LIMIT 10
-      `);
-
-      return {
-        totalRequests: totalStats?.total || 0,
-        cacheHitRate: Math.round((totalStats?.cache_hit_rate || 0) * 100) / 100,
-        avgResponseTime: Math.round((totalStats?.avg_response_time || 0) * 100) / 100,
-        requestsByMethod: methodStats.reduce((acc: Record<string, number>, row: CountRow) => {
-          if (row.method) {
-            acc[row.method] = row.count;
-          }
-          return acc;
-        }, {}),
-        requestsByStatus: statusStats.reduce((acc: Record<string, number>, row: CountRow) => {
-          if (row.status_code) {
-            acc[row.status_code] = row.count;
-          }
-          return acc;
-        }, {}),
-        topUrls: urlStats.map((row) => ({ url: row.url || '', count: row.count })),
-        topCacheKeys: cacheKeyStats.map((row) => ({
-          cacheKey: row.cache_key || '',
-          count: row.count,
-        })),
-      };
+          return {
+            enabled: true,
+            total: total.count,
+            errors: errors.count,
+            avgDuration: Math.round(avgDuration.avg || 0),
+            errorRate: total.count > 0 ? (errors.count / total.count) * 100 : 0,
+          };
+        },
+        'database',
+        { operation: 'request-logger.stats' }
+      );
     } catch (error) {
-      console.error('Failed to get stats:', error);
-      return {
-        totalRequests: 0,
-        cacheHitRate: 0,
-        avgResponseTime: 0,
-        requestsByMethod: {},
-        requestsByStatus: {},
-        topUrls: [],
-        topCacheKeys: [],
-      };
+      this.app?.errorTracker.trackError(error, {
+        operation: 'request-logger.stats',
+      });
+      throw new DatabaseError('Failed to get request logger stats', 'DATABASE_QUERY_ERROR', 500);
     }
   }
 
-  /**
-   * Find cache file for a given request ID
-   */
-  async getCacheFileForRequest(requestId: number): Promise<string | null> {
-    if (!this.enabled || !this.db) return null;
-
-    try {
-      const get = promisify(this.db.get.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<DbRow>;
-
-      const request = await get('SELECT cache_key FROM requests WHERE id = ?', [requestId]);
-      return request?.cache_key || null;
-    } catch (error) {
-      console.error('Failed to get cache key for request:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Clear old requests (older than specified days)
-   */
-  async clearOldRequests(olderThanDays: number = 30): Promise<number> {
+  async clearOldRequests(days: number): Promise<number> {
     if (!this.enabled || !this.db) return 0;
 
     try {
-      const run = promisify(this.db.run.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<sqlite3.RunResult>;
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - days);
 
-      const result = await run('DELETE FROM requests WHERE timestamp < ?', [
-        cutoffDate.toISOString(),
-      ]);
+          const result = await this.db.run('DELETE FROM requests WHERE timestamp < ?', [
+            cutoff.toISOString(),
+          ]);
 
-      return result.changes || 0;
+          return result.changes;
+        },
+        'database',
+        { operation: 'request-logger.clear-old' }
+      );
     } catch (error) {
-      console.error('Failed to clear old requests:', error);
-      return 0;
+      this.app?.errorTracker.trackError(error, {
+        operation: 'request-logger.clear-old',
+        context: { days },
+      });
+      throw new DatabaseError('Failed to clear old request logs', 'DATABASE_CLEANUP_ERROR', 500, {
+        days,
+      });
     }
   }
 
-  /**
-   * Clear all requests
-   */
-  async clearAllRequests(): Promise<number> {
-    if (!this.enabled || !this.db) return 0;
-
-    try {
-      const run = promisify(this.db.run.bind(this.db)) as (
-        sql: string,
-        params?: any[]
-      ) => Promise<sqlite3.RunResult>;
-      const result = await run('DELETE FROM requests');
-      return result.changes || 0;
-    } catch (error) {
-      console.error('Failed to clear all requests:', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Close database connection
-   */
   async close(): Promise<void> {
-    if (this.db) {
-      const close = promisify(this.db.close.bind(this.db)) as () => Promise<void>;
-      await close();
-      this.db = null;
+    if (!this.enabled || !this.db) return;
+
+    try {
+      await this.app?.recovery.withRetry(
+        async () => {
+          await this.db.close();
+        },
+        'database',
+        { operation: 'request-logger.close' }
+      );
+    } catch (error) {
+      this.app?.errorTracker.trackError(error, {
+        operation: 'request-logger.close',
+      });
+      // Don't throw - cleanup failures shouldn't affect shutdown
     }
   }
 

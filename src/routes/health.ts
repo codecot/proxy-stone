@@ -1,17 +1,46 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { HealthService } from '../services/health.js';
 
 export async function healthRoutes(fastify: FastifyInstance) {
-  // Health check endpoint
-  fastify.get('/health', async (request, reply) => {
-    const cacheStats = await fastify.cache.getStats();
+  const healthService = new HealthService(fastify);
 
+  // Basic health check
+  fastify.get('/health', async (request, reply) => {
+    const status = await healthService.getHealthStatus();
+    reply.status(status.status === 'ok' ? 200 : 503);
+    return status;
+  });
+
+  // Detailed health check with metrics
+  fastify.get('/health/detailed', async (request, reply) => {
+    const status = await healthService.getHealthStatus();
+    reply.status(status.status === 'ok' ? 200 : 503);
     return {
-      status: 'ok',
-      cache: cacheStats,
-      config: {
-        enableFileCache: fastify.config.enableFileCache,
-        enableRequestLogging: fastify.config.enableRequestLogging,
+      ...status,
+      metrics: {
+        ...status.metrics,
+        prometheus: await fastify.metrics?.getMetrics(),
       },
+    };
+  });
+
+  // Liveness probe for Kubernetes
+  fastify.get('/health/live', async (request, reply) => {
+    const status = await healthService.getHealthStatus();
+    reply.status(status.status === 'ok' ? 200 : 503);
+    return { status: status.status };
+  });
+
+  // Readiness probe for Kubernetes
+  fastify.get('/health/ready', async (request, reply) => {
+    const status = await healthService.getHealthStatus();
+    const isReady =
+      status.status === 'ok' &&
+      Object.values(status.services).every((service) => service.status === 'ok');
+    reply.status(isReady ? 200 : 503);
+    return {
+      status: isReady ? 'ready' : 'not ready',
+      services: status.services,
     };
   });
 

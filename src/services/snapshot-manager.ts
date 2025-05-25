@@ -6,6 +6,8 @@ import {
   SQLGenerator,
   SNAPSHOTS_SCHEMA,
 } from '../database/index.js';
+import type { FastifyInstance } from 'fastify';
+import { DatabaseError } from '../types/errors.js';
 
 export interface SnapshotMetadata {
   id?: number;
@@ -61,544 +63,250 @@ export interface SnapshotStats {
 type DbRow = Record<string, any>;
 
 export class SnapshotManager {
-  private db: DatabaseAdapter | null = null;
+  private app: FastifyInstance;
+  private enabled: boolean;
+  private dbPath: string;
+  private db: any;
   private sqlGenerator: SQLGenerator | null = null;
-  private enabled: boolean = false;
 
-  constructor(
-    enabled: boolean = true,
-    private dbConfig?: DatabaseConfig,
-    private legacyDbPath?: string // For backwards compatibility
-  ) {
+  constructor(app: FastifyInstance, enabled: boolean, dbPath: string) {
+    this.app = app;
     this.enabled = enabled;
+    this.dbPath = dbPath;
   }
 
-  /**
-   * Initialize the snapshot metadata database
-   */
   async initialize(): Promise<void> {
-    if (!this.enabled) {
-      console.log('Snapshot manager disabled');
-      return;
-    }
+    if (!this.enabled) return;
 
     try {
-      // Use new database configuration if available, otherwise fall back to legacy path
-      let config = this.dbConfig;
-      if (!config && this.legacyDbPath) {
-        config = {
-          type: 'sqlite' as any,
-          path: this.legacyDbPath,
-        };
-      }
+      await this.app?.recovery.withRetry(
+        async () => {
+          const sqlite3 = await import('sqlite3');
+          const { open } = await import('sqlite');
 
-      if (!config) {
-        console.warn('No database configuration provided, disabling snapshot manager');
-        this.enabled = false;
-        return;
-      }
+          this.db = await open({
+            filename: this.dbPath,
+            driver: sqlite3.Database,
+          });
 
-      console.log(`Initializing snapshot manager with ${config.type} database...`);
+          await this.db.exec(`
+            CREATE TABLE IF NOT EXISTS snapshots (
+              id TEXT PRIMARY KEY,
+              url TEXT NOT NULL,
+              data TEXT NOT NULL,
+              headers TEXT NOT NULL,
+              status INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              expires_at TEXT NOT NULL,
+              last_accessed TEXT,
+              access_count INTEGER DEFAULT 0,
+              tags TEXT
+            )
+          `);
 
-      // Create database adapter with timeout
-      this.db = await DatabaseFactory.create(config);
-
-      // Set a timeout for database initialization
-      const initPromise = this.db.initialize();
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Database initialization timeout')), 10000);
-      });
-
-      await Promise.race([initPromise, timeoutPromise]);
-
-      this.sqlGenerator = new SQLGenerator(this.db.getDialect());
-
-      // Create tables if they don't exist
-      await this.ensureTables();
-
-      console.log(`✅ Snapshot manager initialized successfully with ${config.type} database`);
+          // Create indexes for better query performance
+          await this.db.exec('CREATE INDEX IF NOT EXISTS idx_url ON snapshots(url)');
+          await this.db.exec('CREATE INDEX IF NOT EXISTS idx_expires_at ON snapshots(expires_at)');
+          await this.db.exec(
+            'CREATE INDEX IF NOT EXISTS idx_last_accessed ON snapshots(last_accessed)'
+          );
+          await this.db.exec('CREATE INDEX IF NOT EXISTS idx_tags ON snapshots(tags)');
+        },
+        'database',
+        { operation: 'snapshot-manager-initialization' }
+      );
     } catch (error) {
-      console.warn(
-        '⚠️  Failed to initialize snapshot manager:',
-        error instanceof Error ? error.message : error
+      this.app?.errorTracker.trackError(
+        error,
+        {
+          operation: 'snapshot-manager.initialize',
+          context: { dbPath: this.dbPath },
+        },
+        ['critical']
       );
-      console.warn(
-        '📝 Snapshot management will be disabled, but the application will continue to work'
+      throw new DatabaseError(
+        'Failed to initialize snapshot manager database',
+        'DATABASE_INIT_ERROR',
+        500,
+        { dbPath: this.dbPath }
       );
-      console.warn('🔧 To fix this:');
-
-      if (this.dbConfig?.type === 'postgresql') {
-        console.warn('   - Ensure PostgreSQL is running: npm run docker:pg');
-        console.warn('   - Check connection details in .env.pgsql');
-      } else if (this.dbConfig?.type === 'mysql') {
-        console.warn('   - Ensure MySQL is running: npm run docker:mysql');
-        console.warn('   - Check connection details in .env.mysql');
-      } else {
-        console.warn('   - Check SQLite database path and permissions');
-      }
-
-      // Gracefully disable snapshot management
-      this.enabled = false;
-      this.db = null;
-      this.sqlGenerator = null;
     }
   }
 
-  private async ensureTables(): Promise<void> {
-    if (!this.db) return;
-
-    if (!(await this.db.tableExists('snapshots'))) {
-      await this.db.createTable('snapshots', SNAPSHOTS_SCHEMA);
-      console.log('Created snapshots table with indexes');
-    }
-  }
-
-  /**
-   * Record snapshot metadata when cache entry is created
-   */
-  async recordSnapshot(
-    cacheKey: string,
+  async saveSnapshot(
     url: string,
-    method: string,
-    statusCode: number,
-    ttlSeconds: number,
-    backendHost: string,
-    responseData?: unknown,
-    responseHeaders?: Record<string, string>,
-    requestBody?: unknown,
+    data: any,
+    headers: Record<string, string>,
+    status: number,
+    ttl: number,
     tags?: string[]
   ): Promise<void> {
-    if (!this.enabled || !this.db || !this.sqlGenerator) return;
-
-    try {
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
-
-      // Generate payload hash for change detection
-      const payloadHash = responseData
-        ? crypto.createHash('sha256').update(JSON.stringify(responseData)).digest('hex')
-        : null;
-
-      // Generate headers hash
-      const headersHash = responseHeaders
-        ? crypto.createHash('sha256').update(JSON.stringify(responseHeaders)).digest('hex')
-        : null;
-
-      // Calculate response size
-      const responseSize = responseData
-        ? Buffer.byteLength(JSON.stringify(responseData), 'utf8')
-        : null;
-
-      // Extract content type
-      const contentType = responseHeaders?.['content-type'] || null;
-
-      const sql = this.sqlGenerator.generateInsertOrReplace(
-        'snapshots',
-        [
-          'cache_key',
-          'url',
-          'method',
-          'status_code',
-          'created_at',
-          'expires_at',
-          'manual_snapshot',
-          'backend_host',
-          'payload_hash',
-          'headers_hash',
-          'request_body',
-          'response_size',
-          'content_type',
-          'tags',
-          'access_count',
-        ],
-        15
-      );
-
-      await this.db.execute(sql, [
-        cacheKey,
-        url,
-        method,
-        statusCode,
-        now.toISOString(),
-        expiresAt.toISOString(),
-        false, // Not manual by default
-        backendHost,
-        payloadHash,
-        headersHash,
-        requestBody ? JSON.stringify(requestBody) : null,
-        responseSize,
-        contentType,
-        tags ? JSON.stringify(tags) : null,
-        0, // Initial access count
-      ]);
-    } catch (error) {
-      console.error('Failed to record snapshot metadata:', error);
-      // Don't throw - metadata recording should not break cache operations
-    }
-  }
-
-  /**
-   * Update access statistics for a snapshot
-   */
-  async updateAccess(cacheKey: string): Promise<void> {
     if (!this.enabled || !this.db) return;
 
     try {
-      const sql = `
-        UPDATE ${this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots'} 
-        SET access_count = access_count + 1, last_accessed_at = ${this.db.formatPlaceholder(1)}
-        WHERE cache_key = ${this.db.formatPlaceholder(2)}
-      `;
+      await this.app?.recovery.withRetry(
+        async () => {
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + ttl * 1000);
 
-      await this.db.execute(sql, [new Date().toISOString(), cacheKey]);
+          await this.db.run(
+            `INSERT INTO snapshots (
+              id, url, data, headers, status, created_at, expires_at, tags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              crypto.randomUUID(),
+              url,
+              JSON.stringify(data),
+              JSON.stringify(headers),
+              status,
+              now.toISOString(),
+              expiresAt.toISOString(),
+              tags ? JSON.stringify(tags) : null,
+            ]
+          );
+        },
+        'database',
+        { operation: 'snapshot-manager.save' }
+      );
     } catch (error) {
-      console.error('Failed to update snapshot access:', error);
+      this.app?.errorTracker.trackError(error, {
+        operation: 'snapshot-manager.save',
+        context: { url, status },
+      });
+      throw new DatabaseError('Failed to save snapshot', 'DATABASE_SAVE_ERROR', 500, {
+        url,
+        status,
+      });
     }
   }
 
-  /**
-   * Get all snapshots with optional filtering
-   */
-  async getSnapshots(filters: SnapshotFilters = {}): Promise<SnapshotMetadata[]> {
-    if (!this.enabled || !this.db) return [];
-
-    try {
-      let query = `SELECT * FROM ${this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots'} WHERE 1=1`;
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      // Apply filters
-      if (filters.method) {
-        query += ` AND method = ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.method.toUpperCase());
-      }
-
-      if (filters.url) {
-        query += ` AND url LIKE ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(`%${filters.url}%`);
-      }
-
-      if (filters.backend_host) {
-        query += ` AND backend_host = ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.backend_host);
-      }
-
-      if (filters.manual !== undefined) {
-        query += ` AND manual_snapshot = ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.manual);
-      }
-
-      if (filters.expires_before) {
-        query += ` AND expires_at < ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.expires_before);
-      }
-
-      if (filters.expires_after) {
-        query += ` AND expires_at > ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.expires_after);
-      }
-
-      if (filters.created_before) {
-        query += ` AND created_at < ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.created_before);
-      }
-
-      if (filters.created_after) {
-        query += ` AND created_at > ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.created_after);
-      }
-
-      if (filters.tags && filters.tags.length > 0) {
-        // Check if any of the specified tags exist in the tags JSON array
-        const tagConditions = filters.tags
-          .map(() => `tags LIKE ${this.db!.formatPlaceholder(paramIndex++)}`)
-          .join(' OR ');
-        query += ` AND (${tagConditions})`;
-        filters.tags.forEach((tag) => params.push(`%"${tag}"%`));
-      }
-
-      // Order by created_at DESC for most recent first
-      query += ' ORDER BY created_at DESC';
-
-      // Apply pagination
-      if (filters.limit) {
-        query += ` LIMIT ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.limit);
-      }
-
-      if (filters.offset) {
-        query += ` OFFSET ${this.db.formatPlaceholder(paramIndex++)}`;
-        params.push(filters.offset);
-      }
-
-      const rows = await this.db.query<DbRow>(query, params);
-      return rows.map((row) => this.mapRowToSnapshot(row));
-    } catch (error) {
-      console.error('Failed to get snapshots:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get snapshot by cache key
-   */
-  async getSnapshotByCacheKey(cacheKey: string): Promise<SnapshotMetadata | null> {
+  async getSnapshot(url: string): Promise<any> {
     if (!this.enabled || !this.db) return null;
 
     try {
-      const query = `SELECT * FROM ${this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots'} WHERE cache_key = ${this.db.formatPlaceholder(1)}`;
-      const rows = await this.db.query<DbRow>(query, [cacheKey]);
-      return rows.length > 0 ? this.mapRowToSnapshot(rows[0]) : null;
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const now = new Date().toISOString();
+
+          const snapshot = await this.db.get(
+            `SELECT * FROM snapshots 
+             WHERE url = ? AND expires_at > ?
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [url, now]
+          );
+
+          if (snapshot) {
+            // Update access stats
+            await this.db.run(
+              `UPDATE snapshots 
+               SET last_accessed = ?, access_count = access_count + 1
+               WHERE id = ?`,
+              [now, snapshot.id]
+            );
+
+            return {
+              data: JSON.parse(snapshot.data),
+              headers: JSON.parse(snapshot.headers),
+              status: snapshot.status,
+              createdAt: snapshot.created_at,
+              expiresAt: snapshot.expires_at,
+              lastAccessed: snapshot.last_accessed,
+              accessCount: snapshot.access_count,
+              tags: snapshot.tags ? JSON.parse(snapshot.tags) : [],
+            };
+          }
+
+          return null;
+        },
+        'database',
+        { operation: 'snapshot-manager.get' }
+      );
     } catch (error) {
-      console.error('Failed to get snapshot by cache key:', error);
-      return null;
+      this.app?.errorTracker.trackError(error, {
+        operation: 'snapshot-manager.get',
+        context: { url },
+      });
+      throw new DatabaseError('Failed to get snapshot', 'DATABASE_QUERY_ERROR', 500, { url });
     }
   }
 
-  /**
-   * Update snapshot metadata
-   */
-  async updateSnapshot(
-    cacheKey: string,
-    updates: Partial<
-      Pick<SnapshotMetadata, 'expires_at' | 'manual_snapshot' | 'tags' | 'description'>
-    >
-  ): Promise<boolean> {
-    if (!this.enabled || !this.db) return false;
-
-    try {
-      const updateFields: string[] = [];
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      if (updates.expires_at) {
-        updateFields.push(`expires_at = ${this.db.formatPlaceholder(paramIndex++)}`);
-        params.push(updates.expires_at);
-      }
-
-      if (updates.manual_snapshot !== undefined) {
-        updateFields.push(`manual_snapshot = ${this.db.formatPlaceholder(paramIndex++)}`);
-        params.push(updates.manual_snapshot);
-      }
-
-      if (updates.tags !== undefined) {
-        updateFields.push(`tags = ${this.db.formatPlaceholder(paramIndex++)}`);
-        params.push(typeof updates.tags === 'string' ? updates.tags : JSON.stringify(updates.tags));
-      }
-
-      if (updates.description !== undefined) {
-        updateFields.push(`description = ${this.db.formatPlaceholder(paramIndex++)}`);
-        params.push(updates.description);
-      }
-
-      if (updateFields.length === 0) {
-        return false;
-      }
-
-      params.push(cacheKey);
-
-      const query = `
-        UPDATE ${this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots'} 
-        SET ${updateFields.join(', ')}
-        WHERE cache_key = ${this.db.formatPlaceholder(paramIndex)}
-      `;
-
-      const result = await this.db.execute(query, params);
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Failed to update snapshot:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Delete snapshot metadata
-   */
-  async deleteSnapshot(cacheKey: string): Promise<boolean> {
-    if (!this.enabled || !this.db) return false;
-
-    try {
-      const query = `DELETE FROM ${this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots'} WHERE cache_key = ${this.db.formatPlaceholder(1)}`;
-      const result = await this.db.execute(query, [cacheKey]);
-      return result.affectedRows > 0;
-    } catch (error) {
-      console.error('Failed to delete snapshot:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get snapshot statistics
-   */
-  async getStats(): Promise<SnapshotStats> {
+  async getStats(): Promise<any> {
     if (!this.enabled || !this.db) {
-      return {
-        totalSnapshots: 0,
-        manualSnapshots: 0,
-        expiredSnapshots: 0,
-        avgTTL: 0,
-        snapshotsByBackend: {},
-        snapshotsByMethod: {},
-        snapshotsByStatus: {},
-        totalSize: 0,
-        topUrls: [],
-      };
+      return { enabled: false };
     }
 
     try {
-      const tableName = this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots';
-      const currentTimestamp =
-        this.db.getDialect() === 'sqlite' ? "datetime('now')" : 'CURRENT_TIMESTAMP';
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const total = await this.db.get('SELECT COUNT(*) as count FROM snapshots');
+          const active = await this.db.get(
+            'SELECT COUNT(*) as count FROM snapshots WHERE expires_at > datetime("now")'
+          );
+          const expired = await this.db.get(
+            'SELECT COUNT(*) as count FROM snapshots WHERE expires_at <= datetime("now")'
+          );
+          const avgAccessCount = await this.db.get(
+            'SELECT AVG(access_count) as avg FROM snapshots'
+          );
 
-      // Basic counts
-      const basicStatsQuery = `
-        SELECT 
-          COUNT(*) as total_snapshots,
-          SUM(CASE WHEN manual_snapshot = ${this.db.getDialect() === 'sqlite' ? '1' : 'true'} THEN 1 ELSE 0 END) as manual_snapshots,
-          SUM(CASE WHEN expires_at < ${currentTimestamp} THEN 1 ELSE 0 END) as expired_snapshots,
-          AVG(CASE WHEN expires_at > created_at THEN 
-            CASE 
-              WHEN ${this.db.getDialect() === 'sqlite' ? `(julianday(expires_at) - julianday(created_at)) * 86400` : `EXTRACT(EPOCH FROM (expires_at - created_at))`}
-              ELSE 0 
-            END
-            ELSE 0 
-          END) as avg_ttl,
-          COALESCE(SUM(response_size), 0) as total_size
-        FROM ${tableName}
-      `;
-
-      const [basicStats] = await this.db.query(basicStatsQuery);
-
-      // Snapshots by backend
-      const backendStats = await this.db.query(`
-        SELECT backend_host, COUNT(*) as count
-        FROM ${tableName}
-        GROUP BY backend_host
-        ORDER BY count DESC
-      `);
-
-      // Snapshots by method
-      const methodStats = await this.db.query(`
-        SELECT method, COUNT(*) as count
-        FROM ${tableName}
-        GROUP BY method
-        ORDER BY count DESC
-      `);
-
-      // Snapshots by status
-      const statusStats = await this.db.query(`
-        SELECT status_code, COUNT(*) as count
-        FROM ${tableName}
-        GROUP BY status_code
-        ORDER BY count DESC
-      `);
-
-      // Top URLs
-      const topUrls = await this.db.query(`
-        SELECT url, COUNT(*) as count, COALESCE(SUM(response_size), 0) as total_size
-        FROM ${tableName}
-        GROUP BY url
-        ORDER BY count DESC
-        LIMIT 10
-      `);
-
-      return {
-        totalSnapshots: basicStats?.total_snapshots || 0,
-        manualSnapshots: basicStats?.manual_snapshots || 0,
-        expiredSnapshots: basicStats?.expired_snapshots || 0,
-        avgTTL: Math.round(basicStats?.avg_ttl || 0),
-        snapshotsByBackend: this.arrayToObject(backendStats, 'backend_host', 'count'),
-        snapshotsByMethod: this.arrayToObject(methodStats, 'method', 'count'),
-        snapshotsByStatus: this.arrayToObject(statusStats, 'status_code', 'count'),
-        totalSize: basicStats?.total_size || 0,
-        topUrls: topUrls || [],
-      };
+          return {
+            enabled: true,
+            total: total.count,
+            active: active.count,
+            expired: expired.count,
+            avgAccessCount: Math.round(avgAccessCount.avg || 0),
+          };
+        },
+        'database',
+        { operation: 'snapshot-manager.stats' }
+      );
     } catch (error) {
-      console.error('Failed to get snapshot stats:', error);
-      return {
-        totalSnapshots: 0,
-        manualSnapshots: 0,
-        expiredSnapshots: 0,
-        avgTTL: 0,
-        snapshotsByBackend: {},
-        snapshotsByMethod: {},
-        snapshotsByStatus: {},
-        totalSize: 0,
-        topUrls: [],
-      };
+      this.app?.errorTracker.trackError(error, {
+        operation: 'snapshot-manager.stats',
+      });
+      throw new DatabaseError('Failed to get snapshot stats', 'DATABASE_QUERY_ERROR', 500);
     }
   }
 
-  /**
-   * Clean up expired snapshots
-   */
   async cleanExpired(): Promise<number> {
     if (!this.enabled || !this.db) return 0;
 
     try {
-      const tableName = this.db.getDialect() === 'postgresql' ? '"snapshots"' : 'snapshots';
-      const currentTimestamp =
-        this.db.getDialect() === 'sqlite' ? "datetime('now')" : 'CURRENT_TIMESTAMP';
-      const manualSnapshotCondition =
-        this.db.getDialect() === 'sqlite' ? 'manual_snapshot = 0' : 'manual_snapshot = false';
-
-      const query = `
-        DELETE FROM ${tableName} 
-        WHERE expires_at < ${currentTimestamp} AND ${manualSnapshotCondition}
-      `;
-
-      const result = await this.db.execute(query);
-      return result.affectedRows || 0;
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const result = await this.db.run(
+            'DELETE FROM snapshots WHERE expires_at <= datetime("now")'
+          );
+          return result.changes;
+        },
+        'database',
+        { operation: 'snapshot-manager.clean-expired' }
+      );
     } catch (error) {
-      console.error('Failed to clean expired snapshots:', error);
-      return 0;
+      this.app?.errorTracker.trackError(error, {
+        operation: 'snapshot-manager.clean-expired',
+      });
+      throw new DatabaseError('Failed to clean expired snapshots', 'DATABASE_CLEANUP_ERROR', 500);
     }
   }
 
-  /**
-   * Close database connection
-   */
   async close(): Promise<void> {
-    if (this.db) {
-      await this.db.close();
-      this.db = null;
-    }
-  }
+    if (!this.enabled || !this.db) return;
 
-  /**
-   * Convert database row to snapshot metadata
-   */
-  private mapRowToSnapshot(row: DbRow): SnapshotMetadata {
-    return {
-      id: row.id,
-      cache_key: row.cache_key,
-      url: row.url,
-      method: row.method,
-      status_code: row.status_code,
-      created_at: row.created_at,
-      expires_at: row.expires_at,
-      manual_snapshot: !!row.manual_snapshot,
-      backend_host: row.backend_host,
-      payload_hash: row.payload_hash,
-      headers_hash: row.headers_hash,
-      request_body: row.request_body,
-      response_size: row.response_size,
-      content_type: row.content_type,
-      tags: row.tags,
-      description: row.description,
-      last_accessed_at: row.last_accessed_at,
-      access_count: row.access_count || 0,
-    };
-  }
-
-  /**
-   * Convert array to object for stats
-   */
-  private arrayToObject(arr: any[], keyField: string, valueField: string): Record<string, number> {
-    const result: Record<string, number> = {};
-    for (const item of arr) {
-      result[item[keyField]] = item[valueField];
+    try {
+      await this.app?.recovery.withRetry(
+        async () => {
+          await this.db.close();
+        },
+        'database',
+        { operation: 'snapshot-manager.close' }
+      );
+    } catch (error) {
+      this.app?.errorTracker.trackError(error, {
+        operation: 'snapshot-manager.close',
+      });
+      // Don't throw - cleanup failures shouldn't affect shutdown
     }
-    return result;
   }
 }

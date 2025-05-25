@@ -3,6 +3,10 @@ import { CacheService } from '../services/cache.js';
 import { RequestLoggerService } from '../services/request-logger.js';
 import { SnapshotManager } from '../services/snapshot-manager.js';
 import { DatabaseConfig } from '../database/types.js';
+import type { FastifyRequest as BaseFastifyRequest } from 'fastify';
+import type { MetricsService } from '../services/metrics.js';
+import type { RecoveryService } from '../services/recovery.js';
+import type { ErrorTrackerService } from '../services/error-tracker.js';
 
 export interface ApiRequest {
   method: string;
@@ -155,6 +159,17 @@ declare module 'fastify' {
     cache: CacheService;
     requestLogger: RequestLoggerService;
     snapshotManager: SnapshotManager;
+    metrics: MetricsService;
+    recovery: RecoveryService;
+    errorTracker: ErrorTrackerService;
+  }
+}
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    metrics?: {
+      startTime: number;
+    };
   }
 }
 

@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import { FileCacheService, FileCacheEntry } from './file-cache.js';
 import { CacheConfig, CacheRule } from '../types/index.js';
 import { minimatch } from 'minimatch';
+import type { FastifyInstance } from 'fastify';
+import { CacheError } from '../types/errors.js';
 
 // Redis integration (conditional import)
 let Redis: any = null;
@@ -62,6 +64,7 @@ export class CacheService {
   private redis: any = null;
   private redisConnected: boolean = false;
   private cleanupTimer?: NodeJS.Timeout;
+  private app?: FastifyInstance;
 
   // Cache statistics
   private stats = {
@@ -84,14 +87,29 @@ export class CacheService {
     context?: any
   ): Promise<T> {
     try {
-      return await operation();
+      return (
+        (await this.app?.recovery.withRetry(operation, 'cache', {
+          operation: operationName,
+          context,
+        })) ?? (await operation())
+      );
     } catch (error) {
       console.error(`Cache ${operationName} failed:`, {
         error: error instanceof Error ? error.message : String(error),
         context,
         timestamp: new Date().toISOString(),
       });
-      return fallback;
+
+      if (error instanceof CacheError) {
+        throw error;
+      }
+
+      throw new CacheError(
+        `Cache operation failed: ${operationName}`,
+        'CACHE_OPERATION_ERROR',
+        500,
+        { operation: operationName, context }
+      );
     }
   }
 
@@ -109,23 +127,29 @@ export class CacheService {
     }
 
     try {
-      return await operation();
+      return (
+        (await this.app?.recovery.withRetry(operation, 'cache', {
+          operation: operationName,
+          key,
+        })) ?? (await operation())
+      );
     } catch (error) {
       console.error(`Redis ${operationName} failed:`, {
         error: error instanceof Error ? error.message : String(error),
         key,
         timestamp: new Date().toISOString(),
       });
-      // Mark Redis as temporarily unavailable on connection errors
-      if (
-        error instanceof Error &&
-        (error.message.includes('connection') ||
-          error.message.includes('timeout') ||
-          error.message.includes('ECONNREFUSED'))
-      ) {
-        this.redisConnected = false;
+
+      if (error instanceof CacheError) {
+        throw error;
       }
-      return fallback;
+
+      throw new CacheError(
+        `Redis operation failed: ${operationName}`,
+        'REDIS_OPERATION_ERROR',
+        500,
+        { operation: operationName, key }
+      );
     }
   }
 
@@ -267,13 +291,35 @@ export class CacheService {
       console.log('Starting cache warmup...');
       const startTime = Date.now();
 
-      // Load file cache entries into memory cache
-      const loadedCount = await this.fileCache.loadIntoMemoryCache(this.cache);
+      // Load file cache entries into memory cache with priority
+      const loadedCount = await this.fileCache.loadIntoMemoryCache(this.cache, {
+        priority: {
+          // Prioritize frequently accessed endpoints
+          patterns: [
+            { pattern: '/api/v1/*', priority: 1 },
+            { pattern: '/health/*', priority: 2 },
+            { pattern: '/metrics', priority: 2 },
+          ],
+          // Prioritize by last access time
+          byLastAccess: true,
+          // Maximum entries to load
+          maxEntries: this.config.behavior.maxSize || 10000,
+        },
+      });
 
-      // If Redis is available, also populate Redis cache
+      // If Redis is available, also populate Redis cache with priority
       let redisLoadedCount = 0;
       if (this.isRedisAvailable()) {
-        redisLoadedCount = await this.warmupRedisFromMemory();
+        redisLoadedCount = await this.warmupRedisFromMemory({
+          batchSize: 100,
+          concurrency: 5,
+          priority: {
+            // Prioritize by access count
+            byAccessCount: true,
+            // Maximum entries to load
+            maxEntries: this.config.behavior.maxSize || 10000,
+          },
+        });
       }
 
       const duration = Date.now() - startTime;
@@ -292,17 +338,41 @@ export class CacheService {
   }
 
   /**
-   * Warm up Redis cache from memory cache entries
+   * Warm up Redis cache from memory cache entries with enhanced options
    */
-  private async warmupRedisFromMemory(): Promise<number> {
+  private async warmupRedisFromMemory(
+    options: {
+      batchSize?: number;
+      concurrency?: number;
+      priority?: {
+        byAccessCount?: boolean;
+        maxEntries?: number;
+      };
+    } = {}
+  ): Promise<number> {
     if (!this.isRedisAvailable()) {
       return 0;
     }
 
+    const {
+      batchSize = 100,
+      concurrency = 5,
+      priority = { byAccessCount: true, maxEntries: this.config.behavior.maxSize || 10000 },
+    } = options;
+
     let loadedCount = 0;
     const promises: Promise<void>[] = [];
 
-    for (const [key, entry] of this.cache.entries()) {
+    // Sort entries by priority if specified
+    const entries = Array.from(this.cache.entries());
+    if (priority.byAccessCount) {
+      entries.sort(([, a], [, b]) => b.accessCount - a.accessCount);
+    }
+
+    // Limit entries if specified
+    const limitedEntries = priority.maxEntries ? entries.slice(0, priority.maxEntries) : entries;
+
+    for (const [key, entry] of limitedEntries) {
       // Skip expired entries
       if (this.isExpired(entry)) {
         continue;
@@ -326,10 +396,10 @@ export class CacheService {
 
       promises.push(promise);
 
-      // Process in batches to avoid overwhelming Redis
-      if (promises.length >= 100) {
-        await Promise.allSettled(promises);
-        promises.length = 0;
+      // Process in batches with controlled concurrency
+      if (promises.length >= batchSize) {
+        await Promise.allSettled(promises.slice(0, concurrency));
+        promises.splice(0, concurrency);
       }
     }
 
@@ -639,157 +709,179 @@ export class CacheService {
     url?: string,
     headers?: Record<string, string>
   ): Promise<CacheEntry | null> {
-    return this.safeCacheOperation(
-      async () => {
-        // Check if caching is enabled for this request
-        if (method && url && headers) {
-          try {
-            if (!this.isCachingEnabled(method, url, headers)) {
-              return null;
-            }
-          } catch (error) {
-            console.warn('Cache enablement check failed, proceeding with cache lookup:', error);
-          }
-        }
-
-        // 1. Check memory cache first (fastest)
-        try {
-          const memoryEntry = this.cache.get(key);
-          if (memoryEntry) {
+    try {
+      const cached = await this.safeCacheOperation(
+        async () => {
+          // Check if caching is enabled for this request
+          if (method && url && headers) {
             try {
-              if (!this.isExpired(memoryEntry)) {
-                this.updateAccessStats(memoryEntry);
-                this.stats.hits++;
-                return memoryEntry;
-              } else {
-                // Remove expired memory entry
-                this.cache.delete(key);
+              if (!this.isCachingEnabled(method, url, headers)) {
+                return null;
               }
             } catch (error) {
-              console.warn('Memory cache entry validation failed:', error);
-              // Remove potentially corrupted entry
-              this.cache.delete(key);
+              console.warn('Cache enablement check failed, proceeding with cache lookup:', error);
             }
           }
-        } catch (error) {
-          console.warn('Memory cache lookup failed:', error);
-        }
 
-        // 2. Check Redis cache (persistent, shared across instances)
-        const redisEntry = await this.safeRedisOperation(
-          async () => {
-            const redisData = await this.redis.get(key);
-            if (redisData) {
+          // 1. Check memory cache first (fastest)
+          try {
+            const memoryEntry = this.cache.get(key);
+            if (memoryEntry) {
               try {
-                const entry: CacheEntry = JSON.parse(redisData);
-
-                // Check if expired (Redis TTL might have slight delays)
-                if (!this.isExpired(entry)) {
-                  // Load back into memory cache for faster access
-                  try {
-                    this.cache.set(key, entry);
-                    this.evictIfNeeded();
-                    this.updateAccessStats(entry);
-                    this.stats.hits++;
-                    return entry;
-                  } catch (error) {
-                    console.warn('Failed to load Redis entry into memory cache:', error);
-                    // Still return the entry even if memory caching fails
-                    this.stats.hits++;
-                    return entry;
-                  }
+                if (!this.isExpired(memoryEntry)) {
+                  this.updateAccessStats(memoryEntry);
+                  this.stats.hits++;
+                  return memoryEntry;
                 } else {
-                  // Remove expired Redis entry
+                  // Remove expired memory entry
+                  this.cache.delete(key);
+                }
+              } catch (error) {
+                console.warn('Memory cache entry validation failed:', error);
+                // Remove potentially corrupted entry
+                this.cache.delete(key);
+              }
+            }
+          } catch (error) {
+            console.warn('Memory cache lookup failed:', error);
+          }
+
+          // 2. Check Redis cache (persistent, shared across instances)
+          const redisEntry = await this.safeRedisOperation(
+            async () => {
+              const redisData = await this.redis.get(key);
+              if (redisData) {
+                try {
+                  const entry: CacheEntry = JSON.parse(redisData);
+
+                  // Check if expired (Redis TTL might have slight delays)
+                  if (!this.isExpired(entry)) {
+                    // Load back into memory cache for faster access
+                    try {
+                      this.cache.set(key, entry);
+                      this.evictIfNeeded();
+                      this.updateAccessStats(entry);
+                      this.stats.hits++;
+                      return entry;
+                    } catch (error) {
+                      console.warn('Failed to load Redis entry into memory cache:', error);
+                      // Still return the entry even if memory caching fails
+                      this.stats.hits++;
+                      return entry;
+                    }
+                  } else {
+                    // Remove expired Redis entry
+                    await this.safeRedisOperation(
+                      () => this.redis.del(key),
+                      undefined,
+                      'delete-expired',
+                      key
+                    );
+                  }
+                } catch (parseError) {
+                  console.warn('Failed to parse Redis cache entry:', parseError);
+                  // Remove corrupted Redis entry
                   await this.safeRedisOperation(
                     () => this.redis.del(key),
                     undefined,
-                    'delete-expired',
+                    'delete-corrupted',
                     key
                   );
                 }
-              } catch (parseError) {
-                console.warn('Failed to parse Redis cache entry:', parseError);
-                // Remove corrupted Redis entry
-                await this.safeRedisOperation(
-                  () => this.redis.del(key),
-                  undefined,
-                  'delete-corrupted',
-                  key
-                );
               }
-            }
-            return null;
-          },
-          null,
-          'get',
-          key
-        );
+              return null;
+            },
+            null,
+            'get',
+            key
+          );
 
-        if (redisEntry) {
-          return redisEntry;
-        }
+          if (redisEntry) {
+            return redisEntry;
+          }
 
-        // 3. Check file cache (backup)
-        const fileEntry = await this.safeCacheOperation(
-          async () => {
-            const entry = await this.fileCache.get(key);
-            if (entry) {
-              try {
-                // Convert file entry to memory entry format
-                const cacheEntry: CacheEntry = {
-                  data: entry.data,
-                  headers: entry.headers,
-                  status: entry.status,
-                  createdAt: entry.createdAt,
-                  ttl: entry.ttl,
-                  accessCount: 1,
-                  lastAccessed: Date.now(),
-                };
-
-                // Load into memory cache for faster access
+          // 3. Check file cache (backup)
+          const fileEntry = await this.safeCacheOperation(
+            async () => {
+              const entry = await this.fileCache.get(key);
+              if (entry) {
                 try {
-                  this.cache.set(key, cacheEntry);
-                  this.evictIfNeeded();
+                  // Convert file entry to memory entry format
+                  const cacheEntry: CacheEntry = {
+                    data: entry.data,
+                    headers: entry.headers,
+                    status: entry.status,
+                    createdAt: entry.createdAt,
+                    ttl: entry.ttl,
+                    accessCount: 1,
+                    lastAccessed: Date.now(),
+                  };
+
+                  // Load into memory cache for faster access
+                  try {
+                    this.cache.set(key, cacheEntry);
+                    this.evictIfNeeded();
+                  } catch (error) {
+                    console.warn('Failed to load file cache entry into memory:', error);
+                  }
+
+                  // Store in Redis if available
+                  await this.safeRedisOperation(
+                    async () => {
+                      const serialized = JSON.stringify(cacheEntry);
+                      await this.redis.setex(key, cacheEntry.ttl, serialized);
+                    },
+                    undefined,
+                    'warm-up-set',
+                    key
+                  );
+
+                  this.stats.hits++;
+                  return cacheEntry;
                 } catch (error) {
-                  console.warn('Failed to load file cache entry into memory:', error);
+                  console.warn('Failed to process file cache entry:', error);
+                  return null;
                 }
-
-                // Store in Redis if available
-                await this.safeRedisOperation(
-                  async () => {
-                    const serialized = JSON.stringify(cacheEntry);
-                    await this.redis.setex(key, cacheEntry.ttl, serialized);
-                  },
-                  undefined,
-                  'warm-up-set',
-                  key
-                );
-
-                this.stats.hits++;
-                return cacheEntry;
-              } catch (error) {
-                console.warn('Failed to process file cache entry:', error);
-                return null;
               }
-            }
-            return null;
-          },
-          null,
-          'file-cache-get',
-          { key }
-        );
+              return null;
+            },
+            null,
+            'file-cache-get',
+            { key }
+          );
 
-        if (fileEntry) {
-          return fileEntry;
+          if (fileEntry) {
+            return fileEntry;
+          }
+
+          this.stats.misses++;
+          return null;
+        },
+        null,
+        'get-operation',
+        { key, method, url }
+      );
+
+      if (cached) {
+        // Track cache hit
+        if (this.app?.metrics) {
+          this.app.metrics.incrementCacheHit(url || '');
         }
+        return cached;
+      }
 
-        this.stats.misses++;
-        return null;
-      },
-      null,
-      'get-operation',
-      { key, method, url }
-    );
+      // Track cache miss
+      if (this.app?.metrics) {
+        this.app.metrics.incrementCacheMiss(url || '');
+      }
+      return null;
+    } catch (error) {
+      // Track cache error
+      if (this.app?.metrics) {
+        this.app.metrics.incrementError('cache_error', url || '');
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1168,5 +1260,254 @@ export class CacheService {
         console.error('Failed to disconnect Redis:', error);
       }
     }
+  }
+
+  /**
+   * Invalidate cache entries by URL pattern
+   */
+  async invalidateByPattern(
+    pattern: string
+  ): Promise<{ memory: number; redis: number; file: number }> {
+    return this.safeCacheOperation(
+      async () => {
+        let memoryInvalidated = 0;
+        let redisInvalidated = 0;
+        let fileInvalidated = 0;
+
+        // Invalidate memory cache entries
+        for (const [key, entry] of this.cache.entries()) {
+          const url = entry.headers['x-original-url'] || '';
+          if (minimatch(url, pattern)) {
+            this.cache.delete(key);
+            memoryInvalidated++;
+          }
+        }
+
+        // Invalidate Redis cache entries if available
+        if (this.isRedisAvailable()) {
+          redisInvalidated = await this.safeRedisOperation(
+            async () => {
+              const keys = await this.redis.keys('*');
+              let invalidated = 0;
+
+              for (const key of keys) {
+                const data = await this.redis.get(key);
+                if (data) {
+                  try {
+                    const entry = JSON.parse(data);
+                    const url = entry.headers['x-original-url'] || '';
+                    if (minimatch(url, pattern)) {
+                      await this.redis.del(key);
+                      invalidated++;
+                    }
+                  } catch (error) {
+                    console.warn('Failed to parse Redis entry during invalidation:', error);
+                  }
+                }
+              }
+              return invalidated;
+            },
+            0,
+            'invalidate-redis-pattern'
+          );
+        }
+
+        // Invalidate file cache entries
+        fileInvalidated = await this.safeCacheOperation(
+          async () => {
+            const files = await this.fileCache.getAllFiles();
+            let invalidated = 0;
+
+            for (const file of files) {
+              const entry = await this.fileCache.get(file.replace('.json', ''));
+              if (entry) {
+                const url = entry.headers['x-original-url'] || '';
+                if (minimatch(url, pattern)) {
+                  await this.fileCache.delete(file.replace('.json', ''));
+                  invalidated++;
+                }
+              }
+            }
+            return invalidated;
+          },
+          0,
+          'invalidate-file-pattern'
+        );
+
+        return {
+          memory: memoryInvalidated,
+          redis: redisInvalidated,
+          file: fileInvalidated,
+        };
+      },
+      { memory: 0, redis: 0, file: 0 },
+      'invalidate-pattern'
+    );
+  }
+
+  /**
+   * Invalidate cache entries older than specified time
+   */
+  async invalidateOlderThan(
+    ageInSeconds: number
+  ): Promise<{ memory: number; redis: number; file: number }> {
+    return this.safeCacheOperation(
+      async () => {
+        const cutoffTime = Date.now() - ageInSeconds * 1000;
+        let memoryInvalidated = 0;
+        let redisInvalidated = 0;
+        let fileInvalidated = 0;
+
+        // Invalidate memory cache entries
+        for (const [key, entry] of this.cache.entries()) {
+          if (entry.createdAt < cutoffTime) {
+            this.cache.delete(key);
+            memoryInvalidated++;
+          }
+        }
+
+        // Invalidate Redis cache entries if available
+        if (this.isRedisAvailable()) {
+          redisInvalidated = await this.safeRedisOperation(
+            async () => {
+              const keys = await this.redis.keys('*');
+              let invalidated = 0;
+
+              for (const key of keys) {
+                const data = await this.redis.get(key);
+                if (data) {
+                  try {
+                    const entry = JSON.parse(data);
+                    if (entry.createdAt < cutoffTime) {
+                      await this.redis.del(key);
+                      invalidated++;
+                    }
+                  } catch (error) {
+                    console.warn(
+                      'Failed to parse Redis entry during time-based invalidation:',
+                      error
+                    );
+                  }
+                }
+              }
+              return invalidated;
+            },
+            0,
+            'invalidate-redis-time'
+          );
+        }
+
+        // Invalidate file cache entries
+        fileInvalidated = await this.safeCacheOperation(
+          async () => {
+            const files = await this.fileCache.getAllFiles();
+            let invalidated = 0;
+
+            for (const file of files) {
+              const entry = await this.fileCache.get(file.replace('.json', ''));
+              if (entry && entry.createdAt < cutoffTime) {
+                await this.fileCache.delete(file.replace('.json', ''));
+                invalidated++;
+              }
+            }
+            return invalidated;
+          },
+          0,
+          'invalidate-file-time'
+        );
+
+        return {
+          memory: memoryInvalidated,
+          redis: redisInvalidated,
+          file: fileInvalidated,
+        };
+      },
+      { memory: 0, redis: 0, file: 0 },
+      'invalidate-time'
+    );
+  }
+
+  /**
+   * Invalidate cache entries by tags
+   */
+  async invalidateByTags(tags: string[]): Promise<{ memory: number; redis: number; file: number }> {
+    return this.safeCacheOperation(
+      async () => {
+        let memoryInvalidated = 0;
+        let redisInvalidated = 0;
+        let fileInvalidated = 0;
+
+        // Invalidate memory cache entries
+        for (const [key, entry] of this.cache.entries()) {
+          const entryTags = entry.headers['x-cache-tags']?.split(',') || [];
+          if (tags.some((tag) => entryTags.includes(tag))) {
+            this.cache.delete(key);
+            memoryInvalidated++;
+          }
+        }
+
+        // Invalidate Redis cache entries if available
+        if (this.isRedisAvailable()) {
+          redisInvalidated = await this.safeRedisOperation(
+            async () => {
+              const keys = await this.redis.keys('*');
+              let invalidated = 0;
+
+              for (const key of keys) {
+                const data = await this.redis.get(key);
+                if (data) {
+                  try {
+                    const entry = JSON.parse(data);
+                    const entryTags = entry.headers['x-cache-tags']?.split(',') || [];
+                    if (tags.some((tag) => entryTags.includes(tag))) {
+                      await this.redis.del(key);
+                      invalidated++;
+                    }
+                  } catch (error) {
+                    console.warn(
+                      'Failed to parse Redis entry during tag-based invalidation:',
+                      error
+                    );
+                  }
+                }
+              }
+              return invalidated;
+            },
+            0,
+            'invalidate-redis-tags'
+          );
+        }
+
+        // Invalidate file cache entries
+        fileInvalidated = await this.safeCacheOperation(
+          async () => {
+            const files = await this.fileCache.getAllFiles();
+            let invalidated = 0;
+
+            for (const file of files) {
+              const entry = await this.fileCache.get(file.replace('.json', ''));
+              if (entry) {
+                const entryTags = entry.headers['x-cache-tags']?.split(',') || [];
+                if (tags.some((tag) => entryTags.includes(tag))) {
+                  await this.fileCache.delete(file.replace('.json', ''));
+                  invalidated++;
+                }
+              }
+            }
+            return invalidated;
+          },
+          0,
+          'invalidate-file-tags'
+        );
+
+        return {
+          memory: memoryInvalidated,
+          redis: redisInvalidated,
+          file: fileInvalidated,
+        };
+      },
+      { memory: 0, redis: 0, file: 0 },
+      'invalidate-tags'
+    );
   }
 }

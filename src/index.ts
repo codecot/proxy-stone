@@ -13,6 +13,16 @@ import { CacheService } from './services/cache.js';
 import { RequestLoggerService } from './services/request-logger.js';
 import { SnapshotManager } from './services/snapshot-manager.js';
 import { AuthService } from './services/auth-service.js';
+import { MetricsService } from './services/metrics.js';
+import { RecoveryService } from './services/recovery.js';
+import { ErrorTrackerService } from './services/error-tracker.js';
+import type { FastifyRequest } from 'fastify';
+
+interface RateLimitContext {
+  after: string;
+  max: number;
+  ttl: number;
+}
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -32,6 +42,15 @@ const app: AppInstance = fastify({
             },
           },
         }),
+  },
+  ajv: {
+    customOptions: {
+      removeAdditional: 'all',
+      coerceTypes: true,
+      useDefaults: true,
+      allErrors: true,
+    },
+    plugins: [require('ajv-formats'), require('ajv-keywords')],
   },
 });
 
@@ -86,19 +105,60 @@ if (config.auth?.enabled && config.auth.jwt?.secret) {
   );
 }
 
+// Initialize metrics service
+const metricsService = new MetricsService();
+
+// Initialize recovery service
+const recoveryService = new RecoveryService(app);
+
+// Initialize error tracker
+const errorTracker = new ErrorTrackerService(app, {
+  enabled: process.env.ERROR_TRACKING_ENABLED === 'true',
+  service: (process.env.ERROR_TRACKING_SERVICE as 'sentry' | 'datadog' | 'custom') || 'sentry',
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+});
+
 // Initialize services
 await cacheService.initialize();
 await requestLoggerService.initialize();
 await snapshotManager.initialize();
+metricsService.initialize(app);
 
-// Decorate the app instance with the config, cache, request logger, snapshot manager, and auth service
+// Decorate the app instance with services
 app.decorate('config', config);
 app.decorate('cache', cacheService);
 app.decorate('requestLogger', requestLoggerService);
 app.decorate('snapshotManager', snapshotManager);
+app.decorate('metrics', metricsService);
 if (authService) {
   app.decorate('authService', authService);
 }
+app.decorate('recovery', recoveryService);
+app.decorate('errorTracker', errorTracker);
+
+// Add metrics logging to request lifecycle
+app.addHook('onRequest', (request, reply, done) => {
+  const startTime = Date.now();
+  request.metrics = { startTime };
+  done();
+});
+
+app.addHook('onResponse', (request, reply, done) => {
+  if (!request.metrics) {
+    done();
+    return;
+  }
+  const duration = (Date.now() - request.metrics.startTime) / 1000; // Convert to seconds
+  metricsService.incrementRequest(request.method, request.url, reply.statusCode);
+  metricsService.observeRequestDuration(request.method, request.url, duration);
+  done();
+});
+
+app.addHook('onError', (request, reply, error, done) => {
+  metricsService.incrementError(error.name || 'unknown', request.url);
+  done();
+});
 
 // Log configuration
 app.log.info(`Cache TTL: ${config.cacheTTL} seconds`);
@@ -130,6 +190,67 @@ if (config.auth?.enabled) {
 // Register plugins
 await app.register(corsPlugin);
 await app.register(import('@fastify/cookie'));
+
+// Add rate limiting
+await app.register(import('@fastify/rate-limit'), {
+  global: true,
+  max: 100,
+  timeWindow: '1 minute',
+  errorResponseBuilder: (request: FastifyRequest, context: RateLimitContext) => {
+    return {
+      error: 'Rate Limit Exceeded',
+      message: `Too many requests, please try again in ${context.after}`,
+      timestamp: new Date().toISOString(),
+      requestId: request.id,
+      retryAfter: context.after,
+    };
+  },
+});
+
+// Add security headers
+await app.register(import('@fastify/helmet'), {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: 'same-site' },
+  dnsPrefetchControl: { allow: false },
+  frameguard: { action: 'deny' },
+  hidePoweredBy: true,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  ieNoOpen: true,
+  noSniff: true,
+  originAgentCluster: true,
+  permittedCrossDomainPolicies: { permittedPolicies: 'none' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xssFilter: true,
+});
+
+// Add compression
+await app.register(import('@fastify/compress'), {
+  global: true,
+  threshold: 1024, // Only compress responses larger than 1KB
+  encodings: ['gzip', 'deflate'],
+  inflateIfDeflated: true,
+  customTypes: /^text\/|\+json$|\+text$|\+xml$/,
+  removeContentLengthHeader: false,
+});
+
 await app.register(authPlugin);
 await formBodyPlugin(app);
 
