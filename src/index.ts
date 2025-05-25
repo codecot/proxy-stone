@@ -122,13 +122,7 @@ const errorTracker = new ErrorTrackerService(app, {
   environment: process.env.NODE_ENV,
 });
 
-// Initialize services
-await cacheService.initialize();
-await requestLoggerService.initialize();
-await snapshotManager.initialize();
-metricsService.initialize(app);
-
-// Decorate the app instance with services
+// Decorate the app instance with services first
 app.decorate('config', config);
 app.decorate('cache', cacheService);
 app.decorate('requestLogger', requestLoggerService);
@@ -139,6 +133,12 @@ if (authService) {
 }
 app.decorate('recovery', recoveryService);
 app.decorate('errorTracker', errorTracker);
+
+// Initialize services after decoration
+await cacheService.initialize();
+await requestLoggerService.initialize();
+await snapshotManager.initialize();
+metricsService.initialize(app);
 
 // Add metrics logging to request lifecycle
 app.addHook('onRequest', (request, reply, done) => {

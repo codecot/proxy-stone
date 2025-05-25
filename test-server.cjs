@@ -7,7 +7,7 @@ fastify.register(require('@fastify/cors'), {
 });
 
 // Health endpoint
-fastify.get('/proxy/health', async (request, reply) => {
+fastify.get('/api/health', async (request, reply) => {
   return {
     status: 'ok',
     version: '1.0.0',
@@ -17,7 +17,7 @@ fastify.get('/proxy/health', async (request, reply) => {
 });
 
 // Cache endpoints
-fastify.get('/proxy/cache/entries', async (request, reply) => {
+fastify.get('/api/cache/entries', async (request, reply) => {
   return {
     entries: [],
     total: 0,
@@ -26,14 +26,14 @@ fastify.get('/proxy/cache/entries', async (request, reply) => {
   };
 });
 
-fastify.get('/proxy/cache/rules', async (request, reply) => {
+fastify.get('/api/cache/rules', async (request, reply) => {
   return {
     rules: [],
   };
 });
 
 // Debug config endpoint
-fastify.get('/proxy/debug/config', async (request, reply) => {
+fastify.get('/api/debug/config', async (request, reply) => {
   return {
     defaultTTL: 300,
     methods: ['GET', 'POST'],
@@ -42,7 +42,7 @@ fastify.get('/proxy/debug/config', async (request, reply) => {
 });
 
 // Backend status endpoint
-fastify.get('/proxy/health/backend', async (request, reply) => {
+fastify.get('/api/health/backend', async (request, reply) => {
   return {
     backends: [
       {
@@ -55,11 +55,23 @@ fastify.get('/proxy/health/backend', async (request, reply) => {
   };
 });
 
+// Proxy endpoints (for actual proxying)
+fastify.all('/proxy/*', async (request, reply) => {
+  // This would be where actual proxying logic goes
+  return {
+    message: 'Proxy endpoint - would forward requests to backend',
+    originalUrl: request.url,
+    method: request.method,
+  };
+});
+
 // Start server
 const start = async () => {
   try {
     await fastify.listen({ port: 4000, host: '127.0.0.1' });
     console.log('Test server running on http://127.0.0.1:4000');
+    console.log('API endpoints available at /api/*');
+    console.log('Proxy endpoints available at /proxy/*');
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
