@@ -5,6 +5,9 @@ import {
   DatabaseFactory,
   SQLGenerator,
   SNAPSHOTS_SCHEMA,
+  SnapshotRepository,
+  SnapshotData,
+  SnapshotStats as RepoSnapshotStats,
 } from "../database/index.js";
 import type { FastifyInstance } from "fastify";
 import { DatabaseError } from "../types/errors.js";
@@ -68,6 +71,7 @@ export class SnapshotManager {
   private dbConfig: DatabaseConfig;
   private db: DatabaseAdapter | null = null;
   private sqlGenerator: SQLGenerator | null = null;
+  private repository: SnapshotRepository | null = null;
 
   constructor(
     app: FastifyInstance,
@@ -90,6 +94,7 @@ export class SnapshotManager {
           await this.db.initialize();
 
           this.sqlGenerator = new SQLGenerator(this.db.getDialect());
+          this.repository = new SnapshotRepository(this.db);
 
           // Create tables if they don't exist
           await this.ensureTables();
@@ -144,41 +149,21 @@ export class SnapshotManager {
     ttl: number,
     tags?: string[]
   ): Promise<void> {
-    if (!this.enabled || !this.db || !this.sqlGenerator) return;
+    if (!this.enabled || !this.repository) return;
 
     try {
       await this.app?.recovery.withRetry(
         async () => {
-          const now = new Date();
-          const expiresAt = new Date(now.getTime() + ttl * 1000);
-
-          const columns = [
-            "id",
-            "url",
-            "data",
-            "headers",
-            "status",
-            "created_at",
-            "expires_at",
-            "tags",
-          ];
-          const values = [
-            crypto.randomUUID(),
+          const snapshotData: SnapshotData = {
             url,
-            JSON.stringify(data),
-            JSON.stringify(headers),
+            data,
+            headers,
             status,
-            now.toISOString(),
-            expiresAt.toISOString(),
-            tags ? JSON.stringify(tags) : null,
-          ];
+            ttl,
+            tags,
+          };
 
-          const sql = this.sqlGenerator!.generateInsertOrReplace(
-            "snapshots",
-            columns,
-            values.length
-          );
-          await this.db!.execute(sql, values);
+          await this.repository!.saveSnapshot(snapshotData);
         },
         "database",
         { operation: "snapshot-manager.save" }
@@ -201,31 +186,16 @@ export class SnapshotManager {
   }
 
   async getSnapshot(url: string): Promise<any> {
-    if (!this.enabled || !this.db || !this.sqlGenerator) return null;
+    if (!this.enabled || !this.repository) return null;
 
     try {
       return await this.app?.recovery.withRetry(
         async () => {
-          const now = new Date().toISOString();
+          const snapshot = await this.repository!.findActiveSnapshot(url);
 
-          const snapshots = await this.db!.query(
-            `SELECT * FROM snapshots 
-             WHERE url = ${this.sqlGenerator!.formatPlaceholder(1)} AND expires_at > ${this.sqlGenerator!.formatPlaceholder(2)}
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [url, now]
-          );
-
-          if (snapshots.length > 0) {
-            const snapshot = snapshots[0];
-
+          if (snapshot) {
             // Update access stats
-            await this.db!.execute(
-              `UPDATE snapshots 
-               SET last_accessed = ${this.sqlGenerator!.formatPlaceholder(1)}, access_count = access_count + 1
-               WHERE id = ${this.sqlGenerator!.formatPlaceholder(2)}`,
-              [now, snapshot.id]
-            );
+            await this.repository!.updateAccessStats(snapshot.id);
 
             return {
               data: JSON.parse(snapshot.data),
@@ -259,32 +229,21 @@ export class SnapshotManager {
   }
 
   async getStats(): Promise<any> {
-    if (!this.enabled || !this.db || !this.sqlGenerator) {
+    if (!this.enabled || !this.repository) {
       return { enabled: false };
     }
 
     try {
       return await this.app?.recovery.withRetry(
         async () => {
-          const totalResult = await this.db!.query(
-            "SELECT COUNT(*) as count FROM snapshots"
-          );
-          const activeResult = await this.db!.query(
-            "SELECT COUNT(*) as count FROM snapshots WHERE expires_at > CURRENT_TIMESTAMP"
-          );
-          const expiredResult = await this.db!.query(
-            "SELECT COUNT(*) as count FROM snapshots WHERE expires_at <= CURRENT_TIMESTAMP"
-          );
-          const avgAccessCountResult = await this.db!.query(
-            "SELECT AVG(access_count) as avg FROM snapshots"
-          );
+          const stats = await this.repository!.getStats();
 
           return {
             enabled: true,
-            total: totalResult[0]?.count || 0,
-            active: activeResult[0]?.count || 0,
-            expired: expiredResult[0]?.count || 0,
-            avgAccessCount: Math.round(avgAccessCountResult[0]?.avg || 0),
+            total: stats.total,
+            active: stats.active,
+            expired: stats.expired,
+            avgAccessCount: stats.avgAccessCount,
           };
         },
         "database",
@@ -303,15 +262,12 @@ export class SnapshotManager {
   }
 
   async cleanExpired(): Promise<number> {
-    if (!this.enabled || !this.db || !this.sqlGenerator) return 0;
+    if (!this.enabled || !this.repository) return 0;
 
     try {
       return await this.app?.recovery.withRetry(
         async () => {
-          const result = await this.db!.execute(
-            "DELETE FROM snapshots WHERE expires_at <= CURRENT_TIMESTAMP"
-          );
-          return result.affectedRows;
+          return await this.repository!.cleanExpiredSnapshots();
         },
         "database",
         { operation: "snapshot-manager.clean-expired" }
