@@ -5,12 +5,19 @@ export enum DatabaseDialect {
 }
 
 export enum StorageType {
-  // SQL Databases (core)
+  // SQL Databases
   SQLITE = "sqlite",
   MYSQL = "mysql",
   POSTGRESQL = "postgresql",
-  // Local File Storage (no dependencies)
+  // NoSQL Databases
+  MONGODB = "mongodb",
+  REDIS = "redis",
+  DYNAMODB = "dynamodb",
+  // File Storage
+  S3 = "s3",
   LOCAL_FILE = "local_file",
+  AZURE_BLOB = "azure_blob",
+  GCS = "gcs", // Google Cloud Storage
 }
 
 export interface DatabaseConfig {
@@ -32,7 +39,7 @@ export interface DatabaseConfig {
 export interface StorageConfig {
   type: StorageType;
 
-  // SQL Database configs
+  // SQL Database configs (existing)
   path?: string;
   host?: string;
   port?: number;
@@ -43,7 +50,18 @@ export interface StorageConfig {
   poolMax?: number;
   poolTimeout?: number;
 
+  // NoSQL specific configs
+  connectionString?: string; // MongoDB connection string
+  collection?: string; // MongoDB collection name
+  table?: string; // DynamoDB table name
+  region?: string; // AWS region for DynamoDB
+  keyPrefix?: string; // Redis key prefix
+
   // File storage configs
+  bucket?: string; // S3/GCS bucket name
+  accessKeyId?: string; // AWS/GCS access key
+  secretAccessKey?: string; // AWS/GCS secret
+  endpoint?: string; // Custom S3-compatible endpoint
   directory?: string; // Local file directory
 
   // Common options
