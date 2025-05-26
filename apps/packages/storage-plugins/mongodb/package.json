@@ -1,0 +1,37 @@
+{
+  "name": "@proxy-stone/storage-mongodb",
+  "version": "1.0.0",
+  "description": "MongoDB storage plugin for Proxy Stone",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "proxy-stone",
+    "storage",
+    "mongodb",
+    "nosql",
+    "plugin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@proxy-stone/backend": "^1.0.0"
+  },
+  "dependencies": {
+    "mongodb": "^6.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.5.4"
+  }
+}

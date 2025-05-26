@@ -1,6 +1,6 @@
 // Centralized logger for Proxy Stone
-import pino from 'pino';
-import type { LogConfig } from '@proxy-stone/shared';
+import pino from "pino";
+import type { LogConfig } from "@proxy-stone/shared";
 
 export interface Logger {
   debug(message: string, ...args: any[]): void;
@@ -16,13 +16,13 @@ class ProxyStoneLogger implements Logger {
   constructor(config: LogConfig) {
     const pinoConfig: pino.LoggerOptions = {
       level: config.level,
-      ...(config.format === 'pretty' && {
+      ...(config.format === "pretty" && {
         transport: {
-          target: 'pino-pretty',
+          target: "pino-pretty",
           options: {
             colorize: true,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname',
+            translateTime: "SYS:standard",
+            ignore: "pid,hostname",
           },
         },
       }),
@@ -58,9 +58,12 @@ class ProxyStoneLogger implements Logger {
   child(bindings: Record<string, any>): Logger {
     const childPino = this.pino.child(bindings);
     return {
-      debug: (message: string, ...args: any[]) => childPino.debug(message, ...args),
-      info: (message: string, ...args: any[]) => childPino.info(message, ...args),
-      warn: (message: string, ...args: any[]) => childPino.warn(message, ...args),
+      debug: (message: string, ...args: any[]) =>
+        childPino.debug(message, ...args),
+      info: (message: string, ...args: any[]) =>
+        childPino.info(message, ...args),
+      warn: (message: string, ...args: any[]) =>
+        childPino.warn(message, ...args),
       error: (message: string | Error, ...args: any[]) => {
         if (message instanceof Error) {
           childPino.error(message, ...args);
@@ -98,8 +101,8 @@ export function getLogger(): Logger {
   if (!defaultLogger) {
     // Fallback to console logger if not initialized
     return createLogger({
-      level: 'info',
-      format: 'pretty',
+      level: "info",
+      format: "pretty",
     });
   }
   return defaultLogger;
@@ -113,4 +116,4 @@ export function createChildLogger(bindings: Record<string, any>): Logger {
 }
 
 // Export types
-export type { LogConfig }; 
+export type { LogConfig };

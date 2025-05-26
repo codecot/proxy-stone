@@ -2,17 +2,13 @@
 # Combine with any development scenario
 # Example: docker compose -f docker-compose.yml -f docker-compose.backend-dev.yml -f docker-compose.postgres.override.yml up
 
+# No additional service overrides needed for PostgreSQL backend development
+# Backend runs locally and connects to PostgreSQL via localhost:5434
 services:
-  backend:
-    environment:
-      DB_TYPE: postgresql
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: proxy_stone
-      DB_USER: proxy_user
-      DB_PASS: proxy_pass
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+  {}
+
+  # No backend service configuration needed for backend development mode
+  # Backend runs locally and connects to PostgreSQL via localhost:5432
+
+  # No UI configuration needed for backend development mode
+  # UI can be run locally or disabled

@@ -1,12 +1,14 @@
-import type { FastifyInstance } from 'fastify';
-import { DatabaseError } from '../types/errors.js';
-import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
-import path from 'path';
-import { promises as fs } from 'fs';
+import type { FastifyInstance } from "fastify";
+import { DatabaseError } from "../types/errors.js";
+import { StorageFactory } from "../database/storage-factory.js";
+import {
+  StorageAdapter,
+  StorageConfig,
+  StorageType,
+} from "../database/types.js";
 
 export interface LoggedRequest {
-  id?: number;
+  id?: string; // Changed from number to string for better storage plugin compatibility
   timestamp: string;
   method: string;
   originalUrl: string;
@@ -35,6 +37,8 @@ export interface LoggedRequest {
   responseSize?: number; // Response body size in bytes
   contentType?: string; // Request content type
   responseContentType?: string; // Response content type
+  createdAt?: string; // ISO timestamp for creation
+  updatedAt?: string; // ISO timestamp for last update
 }
 
 export interface RequestFilters {
@@ -59,64 +63,22 @@ export interface RequestStats {
   topCacheKeys: Array<{ cacheKey: string; count: number }>;
 }
 
-interface DbRow {
-  id: number;
-  timestamp: string;
-  method: string;
-  original_url: string;
-  target_url: string;
-  backend_host: string | null;
-  backend_path: string | null;
-  status_code: number;
-  response_time: number;
-  dns_timing: number | null;
-  connect_timing: number | null;
-  ttfb_timing: number | null;
-  processing_time: number | null;
-  request_headers: string | null;
-  response_headers: string | null;
-  request_body: string | null;
-  response_body: string | null;
-  query_params: string | null;
-  route_params: string | null;
-  cache_hit: number;
-  cache_key: string | null;
-  cache_ttl: number | null;
-  user_agent: string | null;
-  client_ip: string | null;
-  error_message: string | null;
-  request_size: number | null;
-  response_size: number | null;
-  content_type: string | null;
-  response_content_type: string | null;
-  created_at: string;
-}
-
-interface StatsRow {
-  total: number;
-  cache_hit_rate: number;
-  avg_response_time: number;
-}
-
-interface CountRow {
-  method?: string;
-  status_code?: number;
-  url?: string;
-  cache_key?: string;
-  count: number;
-}
-
 export class RequestLoggerService {
   private app: FastifyInstance;
   private enabled: boolean;
-  private dbPath: string;
-  private db: any;
+  private storageConfig: StorageConfig;
+  private storage: StorageAdapter<LoggedRequest> | null = null;
   private maxBodySize: number = 10000; // Max body size to store (10KB)
+  private requestCounter: number = 0; // For generating unique IDs
 
-  constructor(app: FastifyInstance, enabled: boolean, dbPath: string) {
+  constructor(
+    app: FastifyInstance,
+    enabled: boolean,
+    storageConfig: StorageConfig
+  ) {
     this.app = app;
     this.enabled = enabled;
-    this.dbPath = dbPath;
+    this.storageConfig = storageConfig;
   }
 
   async initialize(): Promise<void> {
@@ -125,167 +87,277 @@ export class RequestLoggerService {
     try {
       await this.app?.recovery.withRetry(
         async () => {
-          const sqlite3 = await import('sqlite3');
-          const { open } = await import('sqlite');
-
-          this.db = await open({
-            filename: this.dbPath,
-            driver: sqlite3.Database,
-          });
-
-          await this.db.exec(`
-            CREATE TABLE IF NOT EXISTS requests (
-              id TEXT PRIMARY KEY,
-              method TEXT,
-              url TEXT,
-              headers TEXT,
-              body TEXT,
-              query TEXT,
-              params TEXT,
-              timestamp TEXT,
-              duration INTEGER,
-              status INTEGER,
-              error TEXT
-            )
-          `);
+          // Initialize storage using the plugin system
+          this.storage =
+            await StorageFactory.createStorageAdapter<LoggedRequest>(
+              this.storageConfig
+            );
+          await this.storage.initialize();
         },
-        'database',
-        { operation: 'request-logger-initialization' }
+        "database",
+        { operation: "request-logger-initialization" }
       );
     } catch (error) {
       this.app?.errorTracker.trackError(
         error,
         {
-          operation: 'request-logger.initialize',
-          context: { dbPath: this.dbPath },
+          operation: "request-logger.initialize",
+          context: { storageConfig: this.storageConfig },
         },
-        ['critical']
+        ["critical"]
       );
       throw new DatabaseError(
-        'Failed to initialize request logger database',
-        'DATABASE_INIT_ERROR',
+        "Failed to initialize request logger storage",
+        "STORAGE_INIT_ERROR",
         500,
-        { dbPath: this.dbPath }
+        { storageConfig: this.storageConfig }
       );
     }
   }
 
-  async logRequest(request: any, duration: number, error?: Error): Promise<void> {
-    if (!this.enabled || !this.db) return;
+  async logRequest(loggedRequest: LoggedRequest): Promise<void> {
+    if (!this.enabled || !this.storage) return;
 
     try {
       await this.app?.recovery.withRetry(
         async () => {
-          const { id, method, url, headers, body, query, params } = request;
+          // Generate unique ID if not provided
+          const id = loggedRequest.id || this.generateRequestId();
 
-          await this.db.run(
-            `INSERT INTO requests (
-              id, method, url, headers, body, query, params,
-              timestamp, duration, status, error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              id,
-              method,
-              url,
-              JSON.stringify(headers),
-              JSON.stringify(body),
-              JSON.stringify(query),
-              JSON.stringify(params),
-              new Date().toISOString(),
-              duration,
-              error ? 500 : 200,
-              error ? error.message : null,
-            ]
-          );
+          // Prepare the request data
+          const requestData: LoggedRequest = {
+            ...loggedRequest,
+            id,
+            requestBody: this.truncateBody(loggedRequest.requestBody),
+            responseBody: this.truncateBody(loggedRequest.responseBody),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          // Save to storage
+          await this.storage!.save(id, requestData, {
+            ttl: this.getTTLForRequest(requestData),
+            metadata: {
+              method: requestData.method,
+              statusCode: requestData.statusCode,
+              cacheHit: requestData.cacheHit,
+              timestamp: requestData.timestamp,
+            },
+          });
         },
-        'database',
-        { operation: 'request-logger.log' }
+        "database",
+        { operation: "request-logger.log" }
       );
     } catch (error) {
       this.app?.errorTracker.trackError(error, {
-        operation: 'request-logger.log',
-        context: { requestId: request.id },
+        operation: "request-logger.log",
+        context: { requestId: loggedRequest.id },
       });
       // Don't throw - logging failures shouldn't affect the main request flow
     }
   }
 
   async getStats(): Promise<any> {
-    if (!this.enabled || !this.db) {
+    if (!this.enabled || !this.storage) {
       return { enabled: false };
     }
 
     try {
       return await this.app?.recovery.withRetry(
         async () => {
-          const total = await this.db.get('SELECT COUNT(*) as count FROM requests');
-          const errors = await this.db.get(
-            'SELECT COUNT(*) as count FROM requests WHERE error IS NOT NULL'
-          );
-          const avgDuration = await this.db.get('SELECT AVG(duration) as avg FROM requests');
+          // Get storage stats
+          const storageStats = await this.storage!.getStats();
+
+          // Get all requests for detailed stats calculation
+          const allRequests = await this.storage!.find({});
+
+          const errorRequests = allRequests.filter((req) => req.errorMessage);
+          const avgDuration =
+            allRequests.length > 0
+              ? allRequests.reduce((sum, req) => sum + req.responseTime, 0) /
+                allRequests.length
+              : 0;
 
           return {
             enabled: true,
-            total: total.count,
-            errors: errors.count,
-            avgDuration: Math.round(avgDuration.avg || 0),
-            errorRate: total.count > 0 ? (errors.count / total.count) * 100 : 0,
+            total: storageStats.totalItems,
+            errors: errorRequests.length,
+            avgDuration: Math.round(avgDuration),
+            errorRate:
+              allRequests.length > 0
+                ? (errorRequests.length / allRequests.length) * 100
+                : 0,
+            storageType: this.storage!.getStorageType(),
+            storageStats,
           };
         },
-        'database',
-        { operation: 'request-logger.stats' }
+        "database",
+        { operation: "request-logger.stats" }
       );
     } catch (error) {
       this.app?.errorTracker.trackError(error, {
-        operation: 'request-logger.stats',
+        operation: "request-logger.stats",
       });
-      throw new DatabaseError('Failed to get request logger stats', 'DATABASE_QUERY_ERROR', 500);
+      throw new DatabaseError(
+        "Failed to get request logger stats",
+        "STORAGE_QUERY_ERROR",
+        500
+      );
     }
   }
 
   async clearOldRequests(days: number): Promise<number> {
-    if (!this.enabled || !this.db) return 0;
+    if (!this.enabled || !this.storage) return 0;
 
     try {
       return await this.app?.recovery.withRetry(
         async () => {
           const cutoff = new Date();
           cutoff.setDate(cutoff.getDate() - days);
+          const cutoffISO = cutoff.toISOString();
 
-          const result = await this.db.run('DELETE FROM requests WHERE timestamp < ?', [
-            cutoff.toISOString(),
-          ]);
+          // Get all requests and filter by date
+          const allRequests = await this.storage!.find({});
+          const oldRequests = allRequests.filter(
+            (req) => req.timestamp < cutoffISO
+          );
 
-          return result.changes;
+          // Delete old requests
+          const keysToDelete = oldRequests.map((req) => req.id!);
+          const deletedCount = await this.storage!.deleteBatch(keysToDelete);
+
+          return deletedCount;
         },
-        'database',
-        { operation: 'request-logger.clear-old' }
+        "database",
+        { operation: "request-logger.clear-old" }
       );
     } catch (error) {
       this.app?.errorTracker.trackError(error, {
-        operation: 'request-logger.clear-old',
+        operation: "request-logger.clear-old",
         context: { days },
       });
-      throw new DatabaseError('Failed to clear old request logs', 'DATABASE_CLEANUP_ERROR', 500, {
-        days,
+      throw new DatabaseError(
+        "Failed to clear old request logs",
+        "STORAGE_CLEANUP_ERROR",
+        500,
+        { days }
+      );
+    }
+  }
+
+  async getRequests(filters?: RequestFilters): Promise<LoggedRequest[]> {
+    if (!this.enabled || !this.storage) return [];
+
+    try {
+      return await this.app?.recovery.withRetry(
+        async () => {
+          // Get all requests first
+          let requests = await this.storage!.find({});
+
+          // Apply filters
+          if (filters) {
+            requests = this.applyFilters(requests, filters);
+          }
+
+          // Sort by timestamp (newest first)
+          requests.sort(
+            (a, b) =>
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+
+          // Apply pagination
+          if (filters?.offset) {
+            requests = requests.slice(filters.offset);
+          }
+          if (filters?.limit) {
+            requests = requests.slice(0, filters.limit);
+          }
+
+          return requests;
+        },
+        "database",
+        { operation: "request-logger.get-requests" }
+      );
+    } catch (error) {
+      this.app?.errorTracker.trackError(error, {
+        operation: "request-logger.get-requests",
+        context: { filters },
       });
+      throw new DatabaseError(
+        "Failed to get request logs",
+        "STORAGE_QUERY_ERROR",
+        500
+      );
+    }
+  }
+
+  async clearAllRequests(): Promise<number> {
+    if (!this.enabled || !this.storage) return 0;
+
+    try {
+      return await this.app?.recovery.withRetry(
+        async () => {
+          // Get all request keys
+          const allRequests = await this.storage!.find({});
+          const keys = allRequests.map((req) => req.id!);
+
+          // Delete all requests
+          return await this.storage!.deleteBatch(keys);
+        },
+        "database",
+        { operation: "request-logger.clear-all" }
+      );
+    } catch (error) {
+      this.app?.errorTracker.trackError(error, {
+        operation: "request-logger.clear-all",
+      });
+      throw new DatabaseError(
+        "Failed to clear all request logs",
+        "STORAGE_CLEANUP_ERROR",
+        500
+      );
+    }
+  }
+
+  async getCacheFileForRequest(id: string): Promise<string | null> {
+    if (!this.enabled || !this.storage) return null;
+
+    try {
+      return await this.app?.recovery.withRetry(
+        async () => {
+          const request = await this.storage!.get(id);
+          return request?.cacheKey || null;
+        },
+        "database",
+        { operation: "request-logger.get-cache-file" }
+      );
+    } catch (error) {
+      this.app?.errorTracker.trackError(error, {
+        operation: "request-logger.get-cache-file",
+        context: { id },
+      });
+      throw new DatabaseError(
+        "Failed to get cache file for request",
+        "STORAGE_QUERY_ERROR",
+        500
+      );
     }
   }
 
   async close(): Promise<void> {
-    if (!this.enabled || !this.db) return;
+    if (!this.enabled || !this.storage) return;
 
     try {
       await this.app?.recovery.withRetry(
         async () => {
-          await this.db.close();
+          await this.storage!.close();
         },
-        'database',
-        { operation: 'request-logger.close' }
+        "database",
+        { operation: "request-logger.close" }
       );
     } catch (error) {
       this.app?.errorTracker.trackError(error, {
-        operation: 'request-logger.close',
+        operation: "request-logger.close",
       });
       // Don't throw - cleanup failures shouldn't affect shutdown
     }
@@ -294,56 +366,79 @@ export class RequestLoggerService {
   /**
    * Private helper to truncate large body content
    */
-  private truncateBody(body: any): string | null {
-    if (!body) return null;
+  private truncateBody(body: any): string | undefined {
+    if (!body) return undefined;
 
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    const bodyStr = typeof body === "string" ? body : JSON.stringify(body);
 
     if (bodyStr.length > this.maxBodySize) {
-      return bodyStr.substring(0, this.maxBodySize) + '... [TRUNCATED]';
+      return bodyStr.substring(0, this.maxBodySize) + "... [TRUNCATED]";
     }
 
     return bodyStr;
   }
 
   /**
-   * Private helper to map database row to LoggedRequest
+   * Private helper to generate unique request IDs
    */
-  private mapRowToRequest(row: DbRow): LoggedRequest {
-    return {
-      id: row.id,
-      timestamp: row.timestamp,
-      method: row.method,
-      originalUrl: row.original_url,
-      targetUrl: row.target_url,
-      // Enhanced backend tracking
-      backendHost: row.backend_host || '',
-      backendPath: row.backend_path || '',
-      statusCode: row.status_code,
-      responseTime: row.response_time,
-      // Enhanced performance metrics
-      dnsTiming: row.dns_timing || undefined,
-      connectTiming: row.connect_timing || undefined,
-      ttfbTiming: row.ttfb_timing || undefined,
-      processingTime: row.processing_time || undefined,
-      requestHeaders: row.request_headers || '{}',
-      responseHeaders: row.response_headers || '{}',
-      requestBody: row.request_body || undefined,
-      responseBody: row.response_body || undefined,
-      // Enhanced parameter tracking
-      queryParams: row.query_params || undefined,
-      routeParams: row.route_params || undefined,
-      cacheHit: row.cache_hit === 1,
-      cacheKey: row.cache_key || undefined,
-      cacheTTL: row.cache_ttl || undefined,
-      userAgent: row.user_agent || undefined,
-      clientIp: row.client_ip || undefined,
-      errorMessage: row.error_message || undefined,
-      // Enhanced request context
-      requestSize: row.request_size || undefined,
-      responseSize: row.response_size || undefined,
-      contentType: row.content_type || undefined,
-      responseContentType: row.response_content_type || undefined,
-    };
+  private generateRequestId(): string {
+    this.requestCounter++;
+    return `req_${Date.now()}_${this.requestCounter}`;
+  }
+
+  /**
+   * Private helper to get TTL for request storage
+   */
+  private getTTLForRequest(request: LoggedRequest): number | undefined {
+    // Keep error requests longer (7 days)
+    if (request.errorMessage || request.statusCode >= 400) {
+      return 7 * 24 * 60 * 60; // 7 days in seconds
+    }
+
+    // Keep successful requests for 30 days by default
+    return 30 * 24 * 60 * 60; // 30 days in seconds
+  }
+
+  /**
+   * Private helper to apply filters to requests
+   */
+  private applyFilters(
+    requests: LoggedRequest[],
+    filters: RequestFilters
+  ): LoggedRequest[] {
+    return requests.filter((request) => {
+      if (filters.method && request.method !== filters.method.toUpperCase()) {
+        return false;
+      }
+
+      if (filters.statusCode && request.statusCode !== filters.statusCode) {
+        return false;
+      }
+
+      if (filters.dateFrom && request.timestamp < filters.dateFrom) {
+        return false;
+      }
+
+      if (filters.dateTo && request.timestamp > filters.dateTo) {
+        return false;
+      }
+
+      if (filters.url && !request.originalUrl.includes(filters.url)) {
+        return false;
+      }
+
+      if (
+        filters.cacheHit !== undefined &&
+        request.cacheHit !== filters.cacheHit
+      ) {
+        return false;
+      }
+
+      if (filters.cacheKey && request.cacheKey !== filters.cacheKey) {
+        return false;
+      }
+
+      return true;
+    });
   }
 }

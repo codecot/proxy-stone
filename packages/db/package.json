@@ -10,13 +10,18 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "echo \"Tests not implemented yet\" && exit 0"
+    "test": "echo \"Tests not implemented yet\" && exit 0",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "description": "Database adapters and schema management for Proxy Stone",
   "keywords": [
@@ -24,14 +29,28 @@
     "adapters",
     "sqlite",
     "mysql",
-    "postgresql"
+    "postgresql",
+    "proxy-stone"
   ],
+  "author": {
+    "name": "Volodymyr Pasichnyk",
+    "email": "vladimir.pasechnik@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codecot/proxy-stone.git",
+    "directory": "packages/db"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "better-sqlite3": "^9.4.0",
     "mysql2": "^3.14.1",
     "pg": "^8.16.0",
-    "@proxy-stone/shared": "*",
-    "@proxy-stone/logger": "*"
+    "@proxy-stone/shared": "^1.0.2",
+    "@proxy-stone/logger": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

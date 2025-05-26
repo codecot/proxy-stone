@@ -1,20 +1,23 @@
-import { FastifyInstance as OriginalFastifyInstance, FastifyRequest } from 'fastify';
-import { CacheService } from '../services/cache.js';
-import { RequestLoggerService } from '../services/request-logger.js';
-import { SnapshotManager } from '../services/snapshot-manager.js';
-import { DatabaseConfig } from '../database/types.js';
-import type { FastifyRequest as BaseFastifyRequest } from 'fastify';
-import type { MetricsService } from '../services/metrics.js';
-import type { RecoveryService } from '../services/recovery.js';
-import type { ErrorTrackerService } from '../services/error-tracker.js';
+import {
+  FastifyInstance as OriginalFastifyInstance,
+  FastifyRequest,
+} from "fastify";
+import { CacheService } from "../services/cache.js";
+import { RequestLoggerService } from "../services/request-logger.js";
+import { SnapshotManager } from "../services/snapshot-manager.js";
+import { DatabaseConfig, StorageConfig } from "../database/types.js";
+import type { FastifyRequest as BaseFastifyRequest } from "fastify";
+import type { MetricsService } from "../services/metrics.js";
+import type { RecoveryService } from "../services/recovery.js";
+import type { ErrorTrackerService } from "../services/error-tracker.js";
 
 export interface ApiRequest {
   method: string;
   url: string;
   headers: Record<string, string>;
   body: unknown;
-  query: FastifyRequest['query'];
-  params: FastifyRequest['params'];
+  query: FastifyRequest["query"];
+  params: FastifyRequest["params"];
 }
 
 export interface ApiResponse extends ApiRequest {
@@ -52,7 +55,7 @@ export interface CacheConfig {
     backgroundCleanup?: boolean; // Enable background cleanup of expired entries
     cleanupInterval?: number; // Cleanup interval in seconds
     maxSize?: number; // Maximum number of cache entries
-    evictionPolicy?: 'lru' | 'fifo'; // Cache eviction policy when maxSize reached
+    evictionPolicy?: "lru" | "fifo"; // Cache eviction policy when maxSize reached
   };
   // Redis configuration
   redis?: {
@@ -69,9 +72,9 @@ export interface CacheConfig {
 
 // Auth configuration types
 export enum Role {
-  ADMIN = 'admin',
-  READ_ONLY = 'readonly',
-  USER = 'user',
+  ADMIN = "admin",
+  READ_ONLY = "readonly",
+  USER = "user",
 }
 
 export interface ApiKey {
@@ -144,6 +147,7 @@ export interface ServerConfig {
   // Request logging options
   enableRequestLogging: boolean;
   requestLogDbPath: string;
+  requestLogStorage?: StorageConfig;
   // Snapshot management options (legacy)
   snapshotDbPath: string;
   // Multi-database configuration
@@ -153,7 +157,7 @@ export interface ServerConfig {
 }
 
 // Extend FastifyInstance to include the decorated config property
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyInstance {
     config: ServerConfig;
     cache: CacheService;
@@ -165,7 +169,7 @@ declare module 'fastify' {
   }
 }
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyRequest {
     metrics?: {
       startTime: number;

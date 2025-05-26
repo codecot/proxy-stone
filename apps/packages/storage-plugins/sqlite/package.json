@@ -1,0 +1,38 @@
+{
+  "name": "@proxy-stone/storage-sqlite",
+  "version": "1.0.0",
+  "description": "SQLite storage plugin for Proxy Stone",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "proxy-stone",
+    "storage",
+    "sqlite",
+    "local",
+    "plugin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@proxy-stone/backend": "^1.0.0"
+  },
+  "dependencies": {
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.5.4"
+  }
+}

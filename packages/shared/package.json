@@ -1,6 +1,6 @@
 {
   "name": "@proxy-stone/shared",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,16 +22,40 @@
       "import": "./dist/config/index.js"
     }
   },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "echo \"Tests not implemented yet\" && exit 0"
+    "test": "echo \"Tests not implemented yet\" && exit 0",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "description": "Shared types, utilities, and configuration for Proxy Stone",
-  "keywords": ["shared", "types", "utils", "config"],
+  "keywords": [
+    "shared",
+    "types",
+    "utils",
+    "config",
+    "proxy-stone"
+  ],
+  "author": {
+    "name": "Volodymyr Pasichnyk",
+    "email": "vladimir.pasechnik@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codecot/proxy-stone.git",
+    "directory": "packages/shared"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
@@ -40,4 +64,4 @@
   "dependencies": {
     "zod": "^3.22.0"
   }
-} 
+}

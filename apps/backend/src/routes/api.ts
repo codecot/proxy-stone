@@ -392,11 +392,43 @@ async function safeLogRequestToDatabase(
       params: routeParams,
     };
 
-    await fastify.requestLogger.logRequest(
-      logRequest,
+    // Create LoggedRequest object for the new API
+    const loggedRequest = {
+      timestamp: new Date().toISOString(),
+      method: processedRequest?.method || request.method,
+      originalUrl: request.url,
+      targetUrl: processedRequest?.targetUrl || request.url,
+      backendHost,
+      backendPath,
+      statusCode,
       responseTime,
-      errorMessage ? new Error(errorMessage) : undefined
-    );
+      requestHeaders: JSON.stringify(processedRequest?.headers || {}),
+      responseHeaders: JSON.stringify(responseHeaders),
+      requestBody: processedRequest?.body
+        ? JSON.stringify(processedRequest.body)
+        : undefined,
+      responseBody: responseData ? JSON.stringify(responseData) : undefined,
+      queryParams:
+        Object.keys(queryParams).length > 0
+          ? JSON.stringify(queryParams)
+          : undefined,
+      routeParams:
+        Object.keys(routeParams).length > 0
+          ? JSON.stringify(routeParams)
+          : undefined,
+      cacheHit,
+      cacheKey,
+      cacheTTL,
+      userAgent: request.headers["user-agent"],
+      clientIp: request.ip,
+      errorMessage,
+      requestSize,
+      responseSize,
+      contentType: processedRequest?.headers?.["content-type"],
+      responseContentType: responseHeaders["content-type"],
+    };
+
+    await fastify.requestLogger.logRequest(loggedRequest);
   } catch (error) {
     // Absolutely critical: Never let logging errors break the main request
     // Only log the logging error itself
