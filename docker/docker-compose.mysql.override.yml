@@ -1,0 +1,18 @@
+# MySQL database override
+# Combine with any development scenario
+# Example: docker compose -f docker-compose.yml -f docker-compose.ui-dev.yml -f docker-compose.mysql.override.yml up
+
+services:
+  backend:
+    environment:
+      DB_TYPE: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: proxy_stone
+      DB_USER: proxy_user
+      DB_PASS: proxy_pass
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

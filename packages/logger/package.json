@@ -1,0 +1,37 @@
+{
+  "name": "@proxy-stone/logger",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "echo \"Tests not implemented yet\" && exit 0"
+  },
+  "description": "Centralized logging for Proxy Stone",
+  "keywords": [
+    "logger",
+    "pino",
+    "logging"
+  ],
+  "dependencies": {
+    "pino": "^8.15.0",
+    "pino-pretty": "^10.2.0",
+    "@proxy-stone/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
+  }
+}

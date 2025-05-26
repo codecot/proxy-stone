@@ -1,0 +1,43 @@
+{
+  "name": "@proxy-stone/db",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "echo \"Tests not implemented yet\" && exit 0"
+  },
+  "description": "Database adapters and schema management for Proxy Stone",
+  "keywords": [
+    "database",
+    "adapters",
+    "sqlite",
+    "mysql",
+    "postgresql"
+  ],
+  "dependencies": {
+    "better-sqlite3": "^9.4.0",
+    "mysql2": "^3.14.1",
+    "pg": "^8.16.0",
+    "@proxy-stone/shared": "*",
+    "@proxy-stone/logger": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/pg": "^8.15.2",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
+  }
+}

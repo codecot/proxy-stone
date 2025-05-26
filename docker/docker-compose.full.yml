@@ -1,0 +1,65 @@
+# Override for full containerized deployment
+# Run: docker compose -f docker-compose.yml -f docker-compose.full.yml up
+# Both backend and UI run in containers
+
+services:
+  # Backend runs in container
+  backend:
+    build: ../apps/backend
+    container_name: proxy-stone-backend
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      HOST: 0.0.0.0
+      API_PREFIX: /proxy
+      TARGET_URL: https://httpbin.org
+      DB_TYPE: sqlite
+      DB_PATH: /app/logs/snapshots.db
+      CACHE_TTL: 300
+      CACHEABLE_METHODS: GET,POST
+      CACHE_MAX_SIZE: 10000
+      CACHE_CLEANUP_INTERVAL: 300
+      ENABLE_REDIS: true
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_KEY_PREFIX: "proxy:cache:"
+      ENABLE_FILE_CACHE: true
+      FILE_CACHE_DIR: /app/cache
+      ENABLE_REQUEST_LOGGING: true
+      REQUEST_LOG_DB_PATH: /app/logs/requests.db
+      CACHE_RULES: "[]"
+    volumes:
+      - cache_data:/app/cache
+      - logs_data:/app/logs
+    networks:
+      - proxy-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # UI runs in container
+  ui:
+    build: ../apps/ui
+    container_name: proxy-stone-ui
+    ports:
+      - "3000:80"
+    networks:
+      - proxy-network
+    environment:
+      REACT_APP_API_URL: http://backend:4000
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
