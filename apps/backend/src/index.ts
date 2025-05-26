@@ -90,7 +90,10 @@ const cacheService = new CacheService(
 const requestLoggerService = new RequestLoggerService(
   app,
   config.enableRequestLogging,
-  config.requestLogDbPath
+  config.requestLogStorage || {
+    type: "sqlite" as any,
+    path: config.requestLogDbPath,
+  }
 );
 
 // Initialize snapshot manager service
@@ -188,7 +191,25 @@ if (config.enableFileCache) {
 }
 app.log.info(`Request logging enabled: ${config.enableRequestLogging}`);
 if (config.enableRequestLogging) {
-  app.log.info(`Request log database: ${config.requestLogDbPath}`);
+  const storageConfig = config.requestLogStorage || {
+    type: "sqlite" as any,
+    path: config.requestLogDbPath,
+  };
+  app.log.info(`Request log storage type: ${storageConfig.type}`);
+  if (storageConfig.type === "sqlite") {
+    app.log.info(`Request log storage path: ${(storageConfig as any).path}`);
+  } else if (storageConfig.type === "local_file") {
+    app.log.info(
+      `Request log storage directory: ${(storageConfig as any).directory}`
+    );
+  } else {
+    app.log.info(
+      `Request log storage host: ${(storageConfig as any).host}:${(storageConfig as any).port}`
+    );
+    app.log.info(
+      `Request log storage database: ${(storageConfig as any).database}`
+    );
+  }
 }
 app.log.info(`Snapshot management enabled: true`);
 app.log.info(`Database type: ${config.database?.type || "sqlite (legacy)"}`);

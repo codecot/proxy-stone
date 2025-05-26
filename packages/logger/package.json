@@ -10,28 +10,47 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "echo \"Tests not implemented yet\" && exit 0"
+    "test": "echo \"Tests not implemented yet\" && exit 0",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "description": "Centralized logging for Proxy Stone",
   "keywords": [
     "logger",
     "pino",
-    "logging"
+    "logging",
+    "proxy-stone"
   ],
+  "author": {
+    "name": "Volodymyr Pasichnyk",
+    "email": "vladimir.pasechnik@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codecot/proxy-stone.git",
+    "directory": "packages/logger"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
+    "@proxy-stone/shared": "^1.0.2",
     "pino": "^8.15.0",
-    "pino-pretty": "^10.2.0",
-    "@proxy-stone/shared": "*"
+    "pino-pretty": "^10.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "eslint": "^8.0.0"
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
   }
 }

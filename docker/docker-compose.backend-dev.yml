@@ -3,21 +3,30 @@
 # Backend runs locally in dev mode, infrastructure in containers
 
 services:
-  # UI runs in container (production build)
-  ui:
-    build: ../apps/ui
-    container_name: proxy-stone-ui
-    ports:
-      - "3000:80"
+  # UI runs in container (production build) - DISABLED for now due to build issues
+  # ui:
+  #   build: ../apps/ui
+  #   container_name: proxy-stone-ui
+  #   ports:
+  #     - "3000:80"
+  #   networks:
+  #     - proxy-network
+  #   environment:
+  #     REACT_APP_API_URL: http://host.docker.internal:4000
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:80"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 20s
+
+  # Placeholder service to make the compose file valid
+  # This will be removed once UI build issues are fixed
+  placeholder:
+    image: alpine:latest
+    container_name: backend-dev-placeholder
+    command: echo "Backend development mode - UI disabled temporarily"
     networks:
       - proxy-network
-    environment:
-      REACT_APP_API_URL: http://host.docker.internal:4000
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s

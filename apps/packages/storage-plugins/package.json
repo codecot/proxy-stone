@@ -1,0 +1,37 @@
+{
+  "name": "@proxy-stone/storage-plugins",
+  "version": "1.0.0",
+  "description": "Storage plugins for Proxy Stone proxy server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "npm run dev --workspaces",
+    "clean": "npm run clean --workspaces",
+    "lint": "echo 'Linting all packages...'",
+    "test": "echo 'Testing all packages...'"
+  },
+  "workspaces": [
+    "mysql",
+    "postgresql",
+    "mongodb",
+    "s3",
+    "azure-storage",
+    "google-cloud",
+    "redis",
+    "sqlite"
+  ],
+  "keywords": [
+    "proxy-stone",
+    "storage",
+    "plugins",
+    "database",
+    "cache"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.5.4"
+  }
+}

@@ -72,7 +72,7 @@ services:
     image: postgres:16-alpine
     container_name: proxy-postgres
     ports:
-      - "5432:5432"
+      - "5434:5432"
     environment:
       - POSTGRES_DB=proxy_stone
       - POSTGRES_USER=proxy_user
@@ -95,7 +95,7 @@ services:
     image: dpage/pgadmin4:latest
     container_name: pgadmin
     ports:
-      - "5050:80"
+      - "5051:80"
     environment:
       - PGADMIN_DEFAULT_EMAIL=admin@proxy-stone.dev
       - PGADMIN_DEFAULT_PASSWORD=admin123

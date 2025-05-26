@@ -1,6 +1,9 @@
-import { FastifyInstance, FastifyRequest } from 'fastify';
-import { RequestLoggerService, RequestFilters } from '../services/request-logger.js';
-import { createErrorResponse } from '../utils/response.js';
+import { FastifyInstance, FastifyRequest } from "fastify";
+import {
+  RequestLoggerService,
+  RequestFilters,
+} from "../services/request-logger.js";
+import { createErrorResponse } from "../utils/response.js";
 
 interface RequestsQuery {
   method?: string;
@@ -51,7 +54,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
   // Get all requests with optional filtering
   fastify.get(
-    '/requests',
+    "/requests",
     async (request: FastifyRequest<{ Querystring: RequestsQuery }>, reply) => {
       try {
         const logger = getRequestLogger();
@@ -76,7 +79,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
           }
 
           if (request.query.cacheHit) {
-            filters.cacheHit = request.query.cacheHit === 'true';
+            filters.cacheHit = request.query.cacheHit === "true";
           }
 
           if (request.query.cacheKey) {
@@ -93,7 +96,8 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
           if (request.query.limit) {
             const limit = parseInt(request.query.limit);
-            filters.limit = !isNaN(limit) && limit > 0 ? Math.min(limit, 1000) : 50; // Cap at 1000
+            filters.limit =
+              !isNaN(limit) && limit > 0 ? Math.min(limit, 1000) : 50; // Cap at 1000
           } else {
             filters.limit = 50; // Default limit
           }
@@ -103,7 +107,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
             filters.offset = !isNaN(offset) && offset >= 0 ? offset : 0;
           }
         } catch (error) {
-          fastify.log.warn('Failed to parse query parameters:', error);
+          fastify.log.warn("Failed to parse query parameters:", error);
           // Continue with default filters
         }
 
@@ -111,7 +115,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
           () => logger.getRequests(filters),
           [],
           fastify.log,
-          'getRequests'
+          "getRequests"
         );
 
         return {
@@ -124,13 +128,13 @@ export async function requestRoutes(fastify: FastifyInstance) {
           filters,
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-requests');
+        return handleRouteError(error, reply, "get-requests");
       }
     }
   );
 
   // Get request statistics
-  fastify.get('/requests/stats', async (request, reply) => {
+  fastify.get("/requests/stats", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const stats = await safeLoggerOperation(
@@ -145,7 +149,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
           topCacheKeys: [],
         },
         fastify.log,
-        'getStats'
+        "getStats"
       );
 
       return {
@@ -153,21 +157,21 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-stats');
+      return handleRouteError(error, reply, "get-stats");
     }
   });
 
   // Get a specific request by ID
   fastify.get(
-    '/requests/:id',
+    "/requests/:id",
     async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
       try {
         const logger = getRequestLogger();
-        const id = parseInt(request.params.id);
+        const id = request.params.id;
 
-        if (isNaN(id) || id <= 0) {
+        if (!id || id.trim().length === 0) {
           reply.status(400);
-          return { error: 'Invalid request ID' };
+          return { error: "Invalid request ID" };
         }
 
         // Get requests with a filter for the specific ID
@@ -175,26 +179,26 @@ export async function requestRoutes(fastify: FastifyInstance) {
           () => logger.getRequests({ limit: 1000 }), // Get more to find the specific ID
           [],
           fastify.log,
-          'getRequestById'
+          "getRequestById"
         );
 
         const specificRequest = requests.find((req) => req.id === id);
 
         if (!specificRequest) {
           reply.status(404);
-          return { error: 'Request not found' };
+          return { error: "Request not found" };
         }
 
         return { request: specificRequest };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-request-by-id');
+        return handleRouteError(error, reply, "get-request-by-id");
       }
     }
   );
 
   // Clear old requests
   fastify.delete(
-    '/requests/old',
+    "/requests/old",
     async (request: FastifyRequest<{ Querystring: ClearQuery }>, reply) => {
       try {
         const logger = getRequestLogger();
@@ -208,14 +212,14 @@ export async function requestRoutes(fastify: FastifyInstance) {
             }
           }
         } catch (error) {
-          fastify.log.warn('Invalid days parameter, using default:', error);
+          fastify.log.warn("Invalid days parameter, using default:", error);
         }
 
         const cleared = await safeLoggerOperation(
           () => logger.clearOldRequests(days),
           0,
           fastify.log,
-          'clearOldRequests'
+          "clearOldRequests"
         );
 
         return {
@@ -224,20 +228,20 @@ export async function requestRoutes(fastify: FastifyInstance) {
           days,
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'clear-old-requests');
+        return handleRouteError(error, reply, "clear-old-requests");
       }
     }
   );
 
   // Clear all requests
-  fastify.delete('/requests/all', async (request, reply) => {
+  fastify.delete("/requests/all", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const cleared = await safeLoggerOperation(
         () => logger.clearAllRequests(),
         0,
         fastify.log,
-        'clearAllRequests'
+        "clearAllRequests"
       );
 
       return {
@@ -245,19 +249,19 @@ export async function requestRoutes(fastify: FastifyInstance) {
         cleared,
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'clear-all-requests');
+      return handleRouteError(error, reply, "clear-all-requests");
     }
   });
 
   // Get recent requests (last 100)
-  fastify.get('/requests/recent', async (request, reply) => {
+  fastify.get("/requests/recent", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const requests = await safeLoggerOperation(
         () => logger.getRequests({ limit: 100 }),
         [],
         fastify.log,
-        'getRecentRequests'
+        "getRecentRequests"
       );
 
       return {
@@ -266,30 +270,38 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-recent-requests');
+      return handleRouteError(error, reply, "get-recent-requests");
     }
   });
 
   // Get requests by method
   fastify.get(
-    '/requests/by-method/:method',
+    "/requests/by-method/:method",
     async (request: FastifyRequest<{ Params: { method: string } }>, reply) => {
       try {
         const logger = getRequestLogger();
         const method = request.params.method.toUpperCase();
 
         // Validate HTTP method
-        const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+        const validMethods = [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE",
+          "PATCH",
+          "HEAD",
+          "OPTIONS",
+        ];
         if (!validMethods.includes(method)) {
           reply.status(400);
-          return { error: 'Invalid HTTP method' };
+          return { error: "Invalid HTTP method" };
         }
 
         const requests = await safeLoggerOperation(
           () => logger.getRequests({ method, limit: 100 }),
           [],
           fastify.log,
-          'getRequestsByMethod'
+          "getRequestsByMethod"
         );
 
         return {
@@ -298,14 +310,14 @@ export async function requestRoutes(fastify: FastifyInstance) {
           count: requests.length,
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-requests-by-method');
+        return handleRouteError(error, reply, "get-requests-by-method");
       }
     }
   );
 
   // Get requests by status code
   fastify.get(
-    '/requests/by-status/:status',
+    "/requests/by-status/:status",
     async (request: FastifyRequest<{ Params: { status: string } }>, reply) => {
       try {
         const logger = getRequestLogger();
@@ -313,14 +325,14 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
         if (isNaN(statusCode) || statusCode < 100 || statusCode > 599) {
           reply.status(400);
-          return { error: 'Invalid status code' };
+          return { error: "Invalid status code" };
         }
 
         const requests = await safeLoggerOperation(
           () => logger.getRequests({ statusCode, limit: 100 }),
           [],
           fastify.log,
-          'getRequestsByStatus'
+          "getRequestsByStatus"
         );
 
         return {
@@ -329,13 +341,13 @@ export async function requestRoutes(fastify: FastifyInstance) {
           count: requests.length,
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-requests-by-status');
+        return handleRouteError(error, reply, "get-requests-by-status");
       }
     }
   );
 
   // Get cache hit vs miss statistics
-  fastify.get('/requests/cache-performance', async (request, reply) => {
+  fastify.get("/requests/cache-performance", async (request, reply) => {
     try {
       const logger = getRequestLogger();
 
@@ -344,18 +356,19 @@ export async function requestRoutes(fastify: FastifyInstance) {
           () => logger.getRequests({ cacheHit: true, limit: 1000 }),
           [],
           fastify.log,
-          'getCacheHits'
+          "getCacheHits"
         ),
         safeLoggerOperation(
           () => logger.getRequests({ cacheHit: false, limit: 1000 }),
           [],
           fastify.log,
-          'getCacheMisses'
+          "getCacheMisses"
         ),
       ]);
 
       const totalRequests = cacheHits.length + cacheMisses.length;
-      const hitRate = totalRequests > 0 ? (cacheHits.length / totalRequests) * 100 : 0;
+      const hitRate =
+        totalRequests > 0 ? (cacheHits.length / totalRequests) * 100 : 0;
 
       return {
         cacheHits: {
@@ -370,28 +383,31 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-cache-performance');
+      return handleRouteError(error, reply, "get-cache-performance");
     }
   });
 
   // Get requests by cache key
   fastify.get(
-    '/requests/by-cache-key/:cacheKey',
-    async (request: FastifyRequest<{ Params: { cacheKey: string } }>, reply) => {
+    "/requests/by-cache-key/:cacheKey",
+    async (
+      request: FastifyRequest<{ Params: { cacheKey: string } }>,
+      reply
+    ) => {
       try {
         const logger = getRequestLogger();
         const cacheKey = request.params.cacheKey;
 
         if (!cacheKey || cacheKey.trim().length === 0) {
           reply.status(400);
-          return { error: 'Invalid cache key' };
+          return { error: "Invalid cache key" };
         }
 
         const requests = await safeLoggerOperation(
           () => logger.getRequests({ cacheKey, limit: 100 }),
           [],
           fastify.log,
-          'getRequestsByCacheKey'
+          "getRequestsByCacheKey"
         );
 
         return {
@@ -401,14 +417,14 @@ export async function requestRoutes(fastify: FastifyInstance) {
           timestamp: new Date().toISOString(),
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-requests-by-cache-key');
+        return handleRouteError(error, reply, "get-requests-by-cache-key");
       }
     }
   );
 
   // Get cache file info for a request
   fastify.get(
-    '/requests/:id/cache-file',
+    "/requests/:id/cache-file",
     async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
       try {
         const logger = getRequestLogger();
@@ -416,36 +432,36 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
         if (isNaN(id) || id <= 0) {
           reply.status(400);
-          return { error: 'Invalid request ID' };
+          return { error: "Invalid request ID" };
         }
 
         const cacheKey = await safeLoggerOperation(
-          () => logger.getCacheFileForRequest(id),
+          () => logger.getCacheFileForRequest(id.toString()),
           null,
           fastify.log,
-          'getCacheFileForRequest'
+          "getCacheFileForRequest"
         );
 
         if (!cacheKey) {
           reply.status(404);
-          return { error: 'Cache key not found for this request' };
+          return { error: "Cache key not found for this request" };
         }
 
         return {
           requestId: id,
           cacheKey,
-          cacheFileName: `cache_${cacheKey.replace(/[^a-zA-Z0-9]/g, '_')}.json`, // Simplified filename
+          cacheFileName: `cache_${cacheKey.replace(/[^a-zA-Z0-9]/g, "_")}.json`, // Simplified filename
           timestamp: new Date().toISOString(),
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-cache-file-for-request');
+        return handleRouteError(error, reply, "get-cache-file-for-request");
       }
     }
   );
 
   // Get requests by backend host
   fastify.get(
-    '/requests/by-backend/:host',
+    "/requests/by-backend/:host",
     async (request: FastifyRequest<{ Params: { host: string } }>, reply) => {
       try {
         const logger = getRequestLogger();
@@ -455,12 +471,12 @@ export async function requestRoutes(fastify: FastifyInstance) {
           host = decodeURIComponent(request.params.host);
         } catch (error) {
           reply.status(400);
-          return { error: 'Invalid backend host parameter' };
+          return { error: "Invalid backend host parameter" };
         }
 
         if (!host || host.trim().length === 0) {
           reply.status(400);
-          return { error: 'Backend host cannot be empty' };
+          return { error: "Backend host cannot be empty" };
         }
 
         // Get requests and filter by backend host
@@ -468,10 +484,12 @@ export async function requestRoutes(fastify: FastifyInstance) {
           () => logger.getRequests({ limit: 1000 }),
           [],
           fastify.log,
-          'getRequestsByBackend'
+          "getRequestsByBackend"
         );
 
-        const filteredRequests = allRequests.filter((req) => req.backendHost === host);
+        const filteredRequests = allRequests.filter(
+          (req) => req.backendHost === host
+        );
 
         return {
           backendHost: host,
@@ -480,20 +498,20 @@ export async function requestRoutes(fastify: FastifyInstance) {
           timestamp: new Date().toISOString(),
         };
       } catch (error) {
-        return handleRouteError(error, reply, 'get-requests-by-backend');
+        return handleRouteError(error, reply, "get-requests-by-backend");
       }
     }
   );
 
   // Get performance analytics
-  fastify.get('/requests/analytics/performance', async (request, reply) => {
+  fastify.get("/requests/analytics/performance", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const recentRequests = await safeLoggerOperation(
         () => logger.getRequests({ limit: 1000 }),
         [],
         fastify.log,
-        'getPerformanceAnalytics'
+        "getPerformanceAnalytics"
       );
 
       // Safe performance metrics calculation
@@ -502,11 +520,16 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let medianResponseTime = 0;
       let percentile95 = 0;
       let slowestRequests: any[] = [];
-      let backendPerformance: Record<string, { count: number; avgTime: number }> = {};
+      let backendPerformance: Record<
+        string,
+        { count: number; avgTime: number }
+      > = {};
 
       try {
         // Calculate performance metrics
-        responseTimes = recentRequests.map((r) => r.responseTime).filter((rt) => rt > 0);
+        responseTimes = recentRequests
+          .map((r) => r.responseTime)
+          .filter((rt) => rt > 0);
         avgResponseTime =
           responseTimes.length > 0
             ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
@@ -514,12 +537,16 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
         medianResponseTime =
           responseTimes.length > 0
-            ? responseTimes.sort((a, b) => a - b)[Math.floor(responseTimes.length / 2)]
+            ? responseTimes.sort((a, b) => a - b)[
+                Math.floor(responseTimes.length / 2)
+              ]
             : 0;
 
         percentile95 =
           responseTimes.length > 0
-            ? responseTimes.sort((a, b) => a - b)[Math.floor(responseTimes.length * 0.95)]
+            ? responseTimes.sort((a, b) => a - b)[
+                Math.floor(responseTimes.length * 0.95)
+              ]
             : 0;
 
         // Slowest endpoints
@@ -547,10 +574,11 @@ export async function requestRoutes(fastify: FastifyInstance) {
         // Calculate averages
         Object.keys(backendPerformance).forEach((host) => {
           const data = backendPerformance[host];
-          data.avgTime = data.count > 0 ? Math.round(data.avgTime / data.count) : 0;
+          data.avgTime =
+            data.count > 0 ? Math.round(data.avgTime / data.count) : 0;
         });
       } catch (error) {
-        fastify.log.warn('Error calculating performance metrics:', error);
+        fastify.log.warn("Error calculating performance metrics:", error);
         // Continue with default values
       }
 
@@ -566,37 +594,43 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-performance-analytics');
+      return handleRouteError(error, reply, "get-performance-analytics");
     }
   });
 
   // Get cache analytics
-  fastify.get('/requests/analytics/cache', async (request, reply) => {
+  fastify.get("/requests/analytics/cache", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const recentRequests = await safeLoggerOperation(
         () => logger.getRequests({ limit: 1000 }),
         [],
         fastify.log,
-        'getCacheAnalytics'
+        "getCacheAnalytics"
       );
 
       // Safe cache analytics calculation
       let cacheHits: any[] = [];
       let cacheMisses: any[] = [];
       let hitRate = 0;
-      let ttlAnalysis: Record<string, { hits: number; misses: number; hitRate: number }> = {};
+      let ttlAnalysis: Record<
+        string,
+        { hits: number; misses: number; hitRate: number }
+      > = {};
       let topCachedEndpoints: any[] = [];
       let estimatedTimeSaved = 0;
 
       try {
         cacheHits = recentRequests.filter((r) => r.cacheHit);
         cacheMisses = recentRequests.filter((r) => !r.cacheHit);
-        hitRate = recentRequests.length > 0 ? (cacheHits.length / recentRequests.length) * 100 : 0;
+        hitRate =
+          recentRequests.length > 0
+            ? (cacheHits.length / recentRequests.length) * 100
+            : 0;
 
         // Cache performance by TTL
         recentRequests.forEach((req) => {
-          const ttlKey = req.cacheTTL ? `${req.cacheTTL}s` : 'no-ttl';
+          const ttlKey = req.cacheTTL ? `${req.cacheTTL}s` : "no-ttl";
           if (!ttlAnalysis[ttlKey]) {
             ttlAnalysis[ttlKey] = { hits: 0, misses: 0, hitRate: 0 };
           }
@@ -617,7 +651,8 @@ export async function requestRoutes(fastify: FastifyInstance) {
         // Most cached endpoints
         const cachedEndpoints: Record<string, number> = {};
         cacheHits.forEach((req) => {
-          cachedEndpoints[req.targetUrl] = (cachedEndpoints[req.targetUrl] || 0) + 1;
+          cachedEndpoints[req.targetUrl] =
+            (cachedEndpoints[req.targetUrl] || 0) + 1;
         });
 
         topCachedEndpoints = Object.entries(cachedEndpoints)
@@ -631,7 +666,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
           return total + req.responseTime * 0.9;
         }, 0);
       } catch (error) {
-        fastify.log.warn('Error calculating cache analytics:', error);
+        fastify.log.warn("Error calculating cache analytics:", error);
         // Continue with default values
       }
 
@@ -651,19 +686,19 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-cache-analytics');
+      return handleRouteError(error, reply, "get-cache-analytics");
     }
   });
 
   // Get data size analytics
-  fastify.get('/requests/analytics/data-size', async (request, reply) => {
+  fastify.get("/requests/analytics/data-size", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const recentRequests = await safeLoggerOperation(
         () => logger.getRequests({ limit: 1000 }),
         [],
         fastify.log,
-        'getDataSizeAnalytics'
+        "getDataSizeAnalytics"
       );
 
       // Safe data size analytics calculation
@@ -674,20 +709,32 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let avgResponseSize = 0;
       let largestRequests: any[] = [];
       let largestResponses: any[] = [];
-      let sizeDistribution = { smallRequests: 0, mediumRequests: 0, largeRequests: 0 };
+      let sizeDistribution = {
+        smallRequests: 0,
+        mediumRequests: 0,
+        largeRequests: 0,
+      };
 
       try {
-        requestsWithSize = recentRequests.filter((r) => r.requestSize && r.responseSize);
+        requestsWithSize = recentRequests.filter(
+          (r) => r.requestSize && r.responseSize
+        );
 
         if (requestsWithSize.length === 0) {
           return {
-            summary: { message: 'No size data available' },
+            summary: { message: "No size data available" },
             timestamp: new Date().toISOString(),
           };
         }
 
-        totalRequestSize = requestsWithSize.reduce((sum, r) => sum + (r.requestSize || 0), 0);
-        totalResponseSize = requestsWithSize.reduce((sum, r) => sum + (r.responseSize || 0), 0);
+        totalRequestSize = requestsWithSize.reduce(
+          (sum, r) => sum + (r.requestSize || 0),
+          0
+        );
+        totalResponseSize = requestsWithSize.reduce(
+          (sum, r) => sum + (r.responseSize || 0),
+          0
+        );
         avgRequestSize = totalRequestSize / requestsWithSize.length;
         avgResponseSize = totalResponseSize / requestsWithSize.length;
 
@@ -716,14 +763,18 @@ export async function requestRoutes(fastify: FastifyInstance) {
 
         // Size distribution
         sizeDistribution = {
-          smallRequests: requestsWithSize.filter((r) => (r.requestSize || 0) < 1024).length,
+          smallRequests: requestsWithSize.filter(
+            (r) => (r.requestSize || 0) < 1024
+          ).length,
           mediumRequests: requestsWithSize.filter(
             (r) => (r.requestSize || 0) >= 1024 && (r.requestSize || 0) < 10240
           ).length,
-          largeRequests: requestsWithSize.filter((r) => (r.requestSize || 0) >= 10240).length,
+          largeRequests: requestsWithSize.filter(
+            (r) => (r.requestSize || 0) >= 10240
+          ).length,
         };
       } catch (error) {
-        fastify.log.warn('Error calculating data size analytics:', error);
+        fastify.log.warn("Error calculating data size analytics:", error);
         // Continue with default values
       }
 
@@ -742,19 +793,19 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-data-size-analytics');
+      return handleRouteError(error, reply, "get-data-size-analytics");
     }
   });
 
   // Get error analytics
-  fastify.get('/requests/analytics/errors', async (request, reply) => {
+  fastify.get("/requests/analytics/errors", async (request, reply) => {
     try {
       const logger = getRequestLogger();
       const recentRequests = await safeLoggerOperation(
         () => logger.getRequests({ limit: 1000 }),
         [],
         fastify.log,
-        'getErrorAnalytics'
+        "getErrorAnalytics"
       );
 
       // Safe error analytics calculation
@@ -769,24 +820,29 @@ export async function requestRoutes(fastify: FastifyInstance) {
       try {
         errorRequests = recentRequests.filter((r) => r.statusCode >= 400);
         serverErrors = errorRequests.filter((r) => r.statusCode >= 500);
-        clientErrors = errorRequests.filter((r) => r.statusCode >= 400 && r.statusCode < 500);
+        clientErrors = errorRequests.filter(
+          (r) => r.statusCode >= 400 && r.statusCode < 500
+        );
 
         // Error breakdown by status code
         errorRequests.forEach((req) => {
-          errorsByStatus[req.statusCode] = (errorsByStatus[req.statusCode] || 0) + 1;
+          errorsByStatus[req.statusCode] =
+            (errorsByStatus[req.statusCode] || 0) + 1;
         });
 
         // Error breakdown by backend
         errorRequests.forEach((req) => {
           if (req.backendHost) {
-            errorsByBackend[req.backendHost] = (errorsByBackend[req.backendHost] || 0) + 1;
+            errorsByBackend[req.backendHost] =
+              (errorsByBackend[req.backendHost] || 0) + 1;
           }
         });
 
         // Most problematic endpoints
         const errorsByEndpoint: Record<string, number> = {};
         errorRequests.forEach((req) => {
-          errorsByEndpoint[req.targetUrl] = (errorsByEndpoint[req.targetUrl] || 0) + 1;
+          errorsByEndpoint[req.targetUrl] =
+            (errorsByEndpoint[req.targetUrl] || 0) + 1;
         });
 
         topErrorEndpoints = Object.entries(errorsByEndpoint)
@@ -804,7 +860,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
           responseTime: r.responseTime,
         }));
       } catch (error) {
-        fastify.log.warn('Error calculating error analytics:', error);
+        fastify.log.warn("Error calculating error analytics:", error);
         // Continue with default values
       }
 
@@ -814,7 +870,9 @@ export async function requestRoutes(fastify: FastifyInstance) {
           totalErrors: errorRequests.length,
           errorRate:
             recentRequests.length > 0
-              ? Math.round((errorRequests.length / recentRequests.length) * 100 * 100) / 100
+              ? Math.round(
+                  (errorRequests.length / recentRequests.length) * 100 * 100
+                ) / 100
               : 0,
           serverErrors: serverErrors.length,
           clientErrors: clientErrors.length,
@@ -826,7 +884,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      return handleRouteError(error, reply, 'get-error-analytics');
+      return handleRouteError(error, reply, "get-error-analytics");
     }
   });
 }

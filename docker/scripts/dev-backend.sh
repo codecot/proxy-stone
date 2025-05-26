@@ -72,7 +72,7 @@ if [ "$DB_TYPE" = "mysql" ]; then
 elif [ "$DB_TYPE" = "postgresql" ]; then
     echo "   DB_TYPE=postgresql"
     echo "   DB_HOST=localhost"
-    echo "   DB_PORT=5432"
+    echo "   DB_PORT=5434"
 else
     echo "   DB_TYPE=sqlite (already configured)"
 fi
@@ -89,8 +89,8 @@ if [ "$DB_TYPE" = "mysql" ]; then
     echo "   - MySQL: localhost:3306"
     echo "   - Adminer: http://localhost:8080"
 elif [ "$DB_TYPE" = "postgresql" ]; then
-    echo "   - PostgreSQL: localhost:5432"
-    echo "   - pgAdmin: http://localhost:5050"
+    echo "   - PostgreSQL: localhost:5434"
+    echo "   - pgAdmin: http://localhost:5051"
 fi
 echo ""
 echo "🛑 To stop: docker compose $COMPOSE_FILES down" 
