@@ -1,0 +1,168 @@
+version: "3.8"
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16
+    container_name: proxy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      POSTGRES_DB: ${POSTGRES_DB:-proxydb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - proxy-network-postgres
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-devuser} -d ${POSTGRES_DB:-proxydb}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: proxy-redis-postgres
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_postgres:/data
+    networks:
+      - proxy-network-postgres
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Proxy server with PostgreSQL + Redis
+  proxy:
+    build: ../apps/backend
+    container_name: proxy-stone-postgres
+    ports:
+      - "4000:4000"
+    environment:
+      # Basic configuration
+      - PORT=4000
+      - HOST=0.0.0.0
+      - API_PREFIX=/proxy
+      - TARGET_URL=https://httpbin.org
+
+      # Database configuration - PostgreSQL
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-devuser}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-devpass}
+      - DB_NAME=${POSTGRES_DB:-proxydb}
+
+      # Cache configuration
+      - CACHE_TTL=300
+      - CACHEABLE_METHODS=GET,POST
+      - CACHE_MAX_SIZE=10000
+      - CACHE_CLEANUP_INTERVAL=300
+
+      # Redis configuration
+      - ENABLE_REDIS=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_KEY_PREFIX=proxy:cache:
+
+      # File cache (backup)
+      - ENABLE_FILE_CACHE=true
+      - FILE_CACHE_DIR=/app/cache
+
+      # Request logging
+      - ENABLE_REQUEST_LOGGING=true
+      - REQUEST_LOG_DB_PATH=/app/logs/requests.db
+
+      # Advanced cache rules (JSON string)
+      - 'CACHE_RULES=[{"pattern":"*/users/*","ttl":600,"methods":["GET"]},{"pattern":"*/search*","ttl":300,"methods":["GET","POST"]}]'
+    volumes:
+      - cache_data_postgres:/app/cache
+      - logs_data_postgres:/app/logs
+    networks:
+      - proxy-network-postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend UI
+  ui:
+    build: ../apps/ui
+    container_name: proxy-stone-ui-postgres
+    ports:
+      - "3000:80"
+    networks:
+      - proxy-network-postgres
+    depends_on:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # pgAdmin - Web UI for PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: proxy-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-adminpass}
+    ports:
+      - "5050:80"
+    networks:
+      - proxy-network-postgres
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  # Redis Commander - Web UI for Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander-postgres
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - proxy-network-postgres
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  redis_data_postgres:
+    driver: local
+  cache_data_postgres:
+    driver: local
+  logs_data_postgres:
+    driver: local
+
+networks:
+  proxy-network-postgres:
+    driver: bridge

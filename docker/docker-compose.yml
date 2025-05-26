@@ -1,0 +1,128 @@
+services:
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: proxy-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - proxy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Redis Commander - Web UI for Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - proxy-network
+    depends_on:
+      - redis
+
+  # SQLite setup (no container needed, just volumes)
+  # MySQL database
+  mysql:
+    image: mysql:8.0
+    container_name: proxy-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=proxy_stone
+      - MYSQL_USER=proxy_user
+      - MYSQL_PASSWORD=proxy_pass
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init/mysql:/docker-entrypoint-initdb.d
+    networks:
+      - proxy-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - mysql
+
+  # Adminer - Database web UI for MySQL
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - proxy-network
+    depends_on:
+      - mysql
+    profiles:
+      - mysql
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: proxy-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=proxy_stone
+      - POSTGRES_USER=proxy_user
+      - POSTGRES_PASSWORD=proxy_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - proxy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proxy_user -d proxy_stone"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres
+
+  # pgAdmin - Database web UI for PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@proxy-stone.dev
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - proxy-network
+    depends_on:
+      - postgres
+    profiles:
+      - postgres
+
+volumes:
+  redis_data:
+    driver: local
+  mysql_data:
+    driver: local
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  cache_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  proxy-network:
+    driver: bridge

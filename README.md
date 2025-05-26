@@ -1,184 +1,236 @@
-# Proxy Stone 🪨
+# Proxy Stone
 
-A high-performance **Backend for Frontend (BFF)** proxy server built with **Fastify** and **TypeScript**. Designed as an API middleware layer that sits between your frontend applications and backend services, providing intelligent request forwarding, caching, logging, and **multi-database support**.
+A high-performance HTTP proxy with caching, monitoring, and admin UI built as a modern monorepo.
 
-## ✨ Key Features
+## 🏗️ Architecture
 
-- 🚀 **High-Performance Proxy**: Built on Fastify for maximum throughput
-- ⚡ **Hybrid Caching**: In-memory + file-based persistence with configurable TTL
-- 🗄️ **Multi-Database Support**: Choose between SQLite, PostgreSQL, or MySQL
-- 🛡️ **Graceful Degradation**: Continues working even when database is unavailable
-- 📊 **Request Analytics**: Comprehensive logging and management interface
-- 🐳 **Docker Ready**: Pre-configured containers for PostgreSQL and MySQL
-- 🔧 **Flexible Configuration**: CLI arguments, environment variables, or config files
-- 🎯 **Production Ready**: TypeScript, comprehensive error handling, monitoring
+This project is organized as a monorepo with the following structure:
+
+```
+proxy-stone/
+├── apps/
+│   ├── backend/                # Fastify proxy service
+│   ├── ui/                     # React admin panel
+│   ├── control-plane/          # (future) Control plane microservice
+│   └── monitoring/             # (future) Monitoring service
+│
+├── packages/
+│   ├── shared/                 # Shared types, utils, config
+│   ├── events/                 # Event contracts, schema validators
+│   ├── logger/                 # Common logger (Pino wrapper)
+│   └── db/                     # Database adapters
+│
+├── docker/                     # Docker compose profiles, scripts
+├── .github/                    # GitHub workflows for CI/CD
+├── .vscode/                    # Workspace settings
+├── package.json                # Root workspace config
+├── turbo.json                  # Turborepo configuration
+└── tsconfig.base.json          # Shared TypeScript config
+```
 
 ## 🚀 Quick Start
 
-### Basic Setup (SQLite)
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+- Docker & Docker Compose (for containerized deployment)
+
+### Installation
 
 ```bash
-# Clone and install
-git clone <repository-url>
+# Clone the repository
+git clone https://github.com/your-username/proxy-stone.git
 cd proxy-stone
+
+# Install dependencies for all packages
 npm install
 
-# Start with default SQLite database
+# Build all packages
+npm run build
+```
+
+### Development
+
+```bash
+# Start all services in development mode
 npm run dev
 
-# Test the proxy
-curl http://localhost:3000/proxy/get
+# Start specific services
+cd apps/backend && npm run dev
+cd apps/ui && npm run dev
 ```
 
-### PostgreSQL Setup
+### Docker Deployment
+
+The project supports multiple database configurations:
 
 ```bash
-# Start PostgreSQL with Docker
-npm run docker:pg
+# SQLite + Redis (lightweight)
+npm run docker:sqlite
 
-# Run with PostgreSQL
-npm run dev -- \
-  --db-type postgresql \
-  --db-host localhost \
-  --db-port 5432 \
-  --db-name proxydb \
-  --db-user devuser \
-  --db-password devpass
-```
-
-### MySQL Setup
-
-```bash
-# Start MySQL with Docker
+# MySQL + Redis + Adminer
 npm run docker:mysql
 
-# Run with MySQL
-npm run dev -- \
-  --db-type mysql \
-  --db-host localhost \
-  --db-port 3306 \
-  --db-name proxydb \
-  --db-user devuser \
-  --db-password devpass
+# PostgreSQL + Redis + pgAdmin
+npm run docker:postgresql
+
+# Interactive launcher
+npm run docker:launcher
+
+# Stop all services
+npm run docker:stop
+
+# Clean up (including volumes)
+npm run docker:clean
 ```
 
-## 🗄️ Database Support
+## 📦 Packages
 
-| Database       | Use Case                | Setup      | Performance | Scalability |
-| -------------- | ----------------------- | ---------- | ----------- | ----------- |
-| **SQLite**     | Development, Small Apps | ⭐ Minimal | ⭐⭐⭐      | ⭐          |
-| **PostgreSQL** | Production, Enterprise  | ⭐⭐⭐     | ⭐⭐⭐⭐    | ⭐⭐⭐⭐⭐  |
-| **MySQL**      | Web Applications, Cloud | ⭐⭐       | ⭐⭐⭐⭐    | ⭐⭐⭐⭐    |
+### Apps
 
-### Graceful Degradation
+- **`@proxy-stone/backend`** - Main proxy server built with Fastify
+- **`@proxy-stone/ui`** - React admin panel with Material-UI
 
-If the database is unavailable, Proxy Stone automatically:
+### Shared Packages
 
-- ✅ Continues serving proxy requests
-- ✅ Maintains in-memory and file caching
-- ⚠️ Disables snapshot management with helpful error messages
-- 🔧 Provides clear recovery instructions
+- **`@proxy-stone/shared`** - Common types, utilities, and configuration
+- **`@proxy-stone/events`** - Event contracts and schema validation
+- **`@proxy-stone/logger`** - Centralized logging with Pino
+- **`@proxy-stone/db`** - Database adapters for SQLite, MySQL, PostgreSQL
 
-## 📊 Quick Health Check
+## 🛠️ Development
+
+### Scripts
 
 ```bash
-# Server status
-curl http://localhost:3000/health
+# Development
+npm run dev              # Start all services in dev mode
+npm run build            # Build all packages
+npm run test             # Run tests across all packages
+npm run lint             # Lint all packages
+npm run type-check       # TypeScript type checking
+npm run clean            # Clean build artifacts
 
-# Cache statistics
-curl http://localhost:3000/api/cache/stats
-
-# Request analytics
-curl http://localhost:3000/api/requests/stats
-
-# Database status
-curl http://localhost:3000/debug/config | jq .database
+# Docker operations
+npm run docker:sqlite    # Start with SQLite
+npm run docker:mysql     # Start with MySQL
+npm run docker:postgresql # Start with PostgreSQL
+npm run docker:stop      # Stop all containers
+npm run docker:status    # Check container status
+npm run docker:launcher  # Interactive menu
 ```
 
-## 🎯 Use Cases
+### Adding New Packages
 
-- **Frontend Development**: Avoid CORS issues, cache API responses
-- **Microservices Gateway**: Centralized entry point with caching
-- **API Optimization**: Cache expensive operations, reduce backend load
-- **Development Proxy**: Switch between dev/staging/prod environments
-- **Request Analytics**: Monitor API usage patterns and performance
+1. Create a new directory under `packages/` or `apps/`
+2. Add a `package.json` with the `@proxy-stone/` namespace
+3. Create a `tsconfig.json` extending the base config
+4. Add the package to the workspace paths in the root `package.json`
 
-## 📁 Documentation
+### Workspace Dependencies
 
-**📖 [Complete Documentation](docs/README.md)** - Full feature guide and examples
+Use workspace references for internal packages:
 
-### Quick Links
+```json
+{
+  "dependencies": {
+    "@proxy-stone/shared": "workspace:*",
+    "@proxy-stone/logger": "workspace:*"
+  }
+}
+```
 
-- **[Quick Start Guide](docs/quick-start.md)** - Get running in 5 minutes
-- **[Multi-Database Guide](docs/multi-database.md)** - PostgreSQL, MySQL, SQLite setup
-- **[Configuration Guide](docs/configuration.md)** - All CLI and environment options
-- **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
-- **[Deployment Guide](docs/deployment.md)** - Production deployment strategies
+## 🐳 Docker
 
-## 🔧 Configuration Examples
+### Services
 
-### Development with Full Features
+| Service         | Port | Description                  |
+| --------------- | ---- | ---------------------------- |
+| Proxy Backend   | 4000 | Main proxy service           |
+| UI              | 3000 | React admin panel            |
+| Redis           | 6379 | Cache store                  |
+| Redis Commander | 8081 | Redis web UI                 |
+| MySQL           | 3306 | Database (MySQL config)      |
+| Adminer         | 8080 | Database web UI (MySQL)      |
+| PostgreSQL      | 5432 | Database (PostgreSQL config) |
+| pgAdmin         | 5050 | Database web UI (PostgreSQL) |
+
+### Configuration Files
+
+- `docker/docker-compose.sqlite.yml` - SQLite + Redis
+- `docker/docker-compose.mysql.yml` - MySQL + Redis + Adminer
+- `docker/docker-compose.postgresql.yml` - PostgreSQL + Redis + pgAdmin
+
+For detailed Docker configuration documentation, see [`docker/README.md`](docker/README.md).
+
+### Scripts
+
+Cross-platform scripts are available in `docker/scripts/`:
+
+- **Linux/macOS**: `.sh` scripts
+- **Windows**: `.bat` and `.ps1` scripts
+
+## 🔧 Configuration
+
+### Environment Variables
 
 ```bash
-npm run dev -- \
-  --enable-file-cache \
-  --db-type postgresql \
-  --cache-ttl 300 \
-  --target-url https://api.example.com
-```
+# Server
+PORT=4000
+HOST=0.0.0.0
 
-### Production Environment
+# Database
+DB_TYPE=sqlite|mysql|postgresql
+DB_HOST=localhost
+DB_PORT=3306|5432
+DB_NAME=proxy_stone
+DB_USER=username
+DB_PASS=password
 
-```bash
-export NODE_ENV=production
-export DB_TYPE=postgresql
-export DB_HOST=postgres-cluster.com
-export DB_NAME=proxy_production
-export CACHE_TTL=600
-npm start
-```
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=optional
 
-### Docker Compose
+# Proxy
+PROXY_TARGET=https://httpbin.org
+PROXY_TIMEOUT=30000
+PROXY_RETRIES=3
 
-```yaml
-services:
-  proxy-stone:
-    build: .
-    environment:
-      - DB_TYPE=postgresql
-      - DB_HOST=postgres
-      - ENABLE_FILE_CACHE=true
-    depends_on:
-      - postgres
+# Cache
+CACHE_ENABLED=true
+CACHE_TTL=300
 ```
 
 ## 🧪 Testing
 
 ```bash
 # Run all tests
-npm test
+npm run test
 
-# Test database configurations
-node test-failure-scenarios.js
-
-# Test specific database
-npm run docker:pg
-npm run dev -- --db-type postgresql --port 4001
+# Run tests for specific package
+cd packages/shared && npm run test
+cd apps/backend && npm run test
 ```
 
-## 🤝 Contributing
+## 📝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
-
-See [Development Guide](docs/development.md) for detailed instructions.
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes
+4. Run tests: `npm run test`
+5. Run linting: `npm run lint`
+6. Commit your changes: `git commit -m 'Add amazing feature'`
+7. Push to the branch: `git push origin feature/amazing-feature`
+8. Open a Pull Request
 
 ## 📄 License
 
-MIT License - see LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
----
+## 🤝 Support
 
-**Ready to get started?** Check out the **[Complete Documentation](docs/README.md)** or jump to the **[Quick Start Guide](docs/quick-start.md)**!
+- 📧 Email: support@proxy-stone.dev
+- 🐛 Issues: [GitHub Issues](https://github.com/your-username/proxy-stone/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/your-username/proxy-stone/discussions)

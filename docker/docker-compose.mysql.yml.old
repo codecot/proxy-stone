@@ -1,0 +1,169 @@
+version: "3.8"
+
+services:
+  # MySQL database
+  mysql:
+    image: mysql:8
+    container_name: proxy-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-proxydb}
+      MYSQL_USER: ${MYSQL_USER:-devuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devpass}
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - proxy-network-mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${MYSQL_ROOT_PASSWORD:-rootpass}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: proxy-redis-mysql
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_mysql:/data
+    networks:
+      - proxy-network-mysql
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Proxy server with MySQL + Redis
+  proxy:
+    build: ../apps/backend
+    container_name: proxy-stone-mysql
+    ports:
+      - "4000:4000"
+    environment:
+      # Basic configuration
+      - PORT=4000
+      - HOST=0.0.0.0
+      - API_PREFIX=/proxy
+      - TARGET_URL=https://httpbin.org
+
+      # Database configuration - MySQL
+      - DB_TYPE=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${MYSQL_USER:-devuser}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-devpass}
+      - DB_NAME=${MYSQL_DATABASE:-proxydb}
+
+      # Cache configuration
+      - CACHE_TTL=300
+      - CACHEABLE_METHODS=GET,POST
+      - CACHE_MAX_SIZE=10000
+      - CACHE_CLEANUP_INTERVAL=300
+
+      # Redis configuration
+      - ENABLE_REDIS=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_KEY_PREFIX=proxy:cache:
+
+      # File cache (backup)
+      - ENABLE_FILE_CACHE=true
+      - FILE_CACHE_DIR=/app/cache
+
+      # Request logging
+      - ENABLE_REQUEST_LOGGING=true
+      - REQUEST_LOG_DB_PATH=/app/logs/requests.db
+
+      # Advanced cache rules (JSON string)
+      - 'CACHE_RULES=[{"pattern":"*/users/*","ttl":600,"methods":["GET"]},{"pattern":"*/search*","ttl":300,"methods":["GET","POST"]}]'
+    volumes:
+      - cache_data_mysql:/app/cache
+      - logs_data_mysql:/app/logs
+    networks:
+      - proxy-network-mysql
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend UI
+  ui:
+    build: ../apps/ui
+    container_name: proxy-stone-ui-mysql
+    ports:
+      - "3000:80"
+    networks:
+      - proxy-network-mysql
+    depends_on:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Adminer - Web UI for MySQL
+  adminer:
+    image: adminer
+    container_name: proxy-adminer-mysql
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - proxy-network-mysql
+    depends_on:
+      - mysql
+
+  # Redis Commander - Web UI for Redis
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander-mysql
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - proxy-network-mysql
+    depends_on:
+      - redis
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data_mysql:
+    driver: local
+  cache_data_mysql:
+    driver: local
+  logs_data_mysql:
+    driver: local
+
+networks:
+  proxy-network-mysql:
+    driver: bridge

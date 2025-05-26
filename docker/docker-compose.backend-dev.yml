@@ -1,0 +1,23 @@
+# Override for backend development
+# Run: docker compose -f docker-compose.yml -f docker-compose.backend-dev.yml up
+# Backend runs locally in dev mode, infrastructure in containers
+
+services:
+  # UI runs in container (production build)
+  ui:
+    build: ../apps/ui
+    container_name: proxy-stone-ui
+    ports:
+      - "3000:80"
+    networks:
+      - proxy-network
+    environment:
+      REACT_APP_API_URL: http://host.docker.internal:4000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
