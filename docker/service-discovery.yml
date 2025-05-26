@@ -1,0 +1,294 @@
+version: '3.8'
+
+services:
+  # etcd cluster for service discovery
+  etcd1:
+    image: quay.io/coreos/etcd:v3.5.10
+    container_name: proxy-stone-etcd1
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd1
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd1:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd1:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=proxy-stone-cluster
+      - --initial-cluster-state=new
+      - --log-level=info
+      - --logger=zap
+      - --log-outputs=stderr
+    volumes:
+      - etcd1_data:/etcd-data
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    networks:
+      - proxy-stone-discovery
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.5.10
+    container_name: proxy-stone-etcd2
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd2
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd2:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd2:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=proxy-stone-cluster
+      - --initial-cluster-state=new
+      - --log-level=info
+      - --logger=zap
+      - --log-outputs=stderr
+    volumes:
+      - etcd2_data:/etcd-data
+    ports:
+      - "2389:2379"
+      - "2390:2380"
+    networks:
+      - proxy-stone-discovery
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.5.10
+    container_name: proxy-stone-etcd3
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd3
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd3:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd3:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=proxy-stone-cluster
+      - --initial-cluster-state=new
+      - --log-level=info
+      - --logger=zap
+      - --log-outputs=stderr
+    volumes:
+      - etcd3_data:/etcd-data
+    ports:
+      - "2399:2379"
+      - "2400:2380"
+    networks:
+      - proxy-stone-discovery
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for additional caching and pub/sub
+  redis-cluster:
+    image: redis:7-alpine
+    container_name: proxy-stone-redis-discovery
+    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000
+    volumes:
+      - redis_discovery_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - proxy-stone-discovery
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Proxy-Stone instance 1
+  proxy-stone-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: proxy-stone-instance-1
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - SERVICE_DISCOVERY_ENABLED=true
+      - SERVICE_DISCOVERY_REGISTRY=etcd
+      - SERVICE_DISCOVERY_ENDPOINTS=http://etcd1:2379,http://etcd2:2379,http://etcd3:2379
+      - SERVICE_DISCOVERY_NAMESPACE=proxy-stone
+      - SERVICE_NAME=proxy-stone
+      - SERVICE_HOST=proxy-stone-1
+      - SERVICE_PORT=3001
+      - SERVICE_VERSION=1.0.0
+      - SERVICE_REGION=us-east-1
+      - SERVICE_ZONE=us-east-1a
+      - REDIS_URL=redis://redis-cluster:6379
+    ports:
+      - "3001:3001"
+    networks:
+      - proxy-stone-discovery
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - redis-cluster
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Proxy-Stone instance 2
+  proxy-stone-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: proxy-stone-instance-2
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - SERVICE_DISCOVERY_ENABLED=true
+      - SERVICE_DISCOVERY_REGISTRY=etcd
+      - SERVICE_DISCOVERY_ENDPOINTS=http://etcd1:2379,http://etcd2:2379,http://etcd3:2379
+      - SERVICE_DISCOVERY_NAMESPACE=proxy-stone
+      - SERVICE_NAME=proxy-stone
+      - SERVICE_HOST=proxy-stone-2
+      - SERVICE_PORT=3002
+      - SERVICE_VERSION=1.0.0
+      - SERVICE_REGION=us-east-1
+      - SERVICE_ZONE=us-east-1b
+      - REDIS_URL=redis://redis-cluster:6379
+    ports:
+      - "3002:3002"
+    networks:
+      - proxy-stone-discovery
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - redis-cluster
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Proxy-Stone instance 3
+  proxy-stone-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: proxy-stone-instance-3
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - SERVICE_DISCOVERY_ENABLED=true
+      - SERVICE_DISCOVERY_REGISTRY=etcd
+      - SERVICE_DISCOVERY_ENDPOINTS=http://etcd1:2379,http://etcd2:2379,http://etcd3:2379
+      - SERVICE_DISCOVERY_NAMESPACE=proxy-stone
+      - SERVICE_NAME=proxy-stone
+      - SERVICE_HOST=proxy-stone-3
+      - SERVICE_PORT=3003
+      - SERVICE_VERSION=1.0.0
+      - SERVICE_REGION=us-west-2
+      - SERVICE_ZONE=us-west-2a
+      - REDIS_URL=redis://redis-cluster:6379
+    ports:
+      - "3003:3003"
+    networks:
+      - proxy-stone-discovery
+    depends_on:
+      - etcd1
+      - etcd2
+      - etcd3
+      - redis-cluster
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Load balancer for the cluster
+  nginx-lb:
+    image: nginx:alpine
+    container_name: proxy-stone-lb
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - proxy-stone-discovery
+    depends_on:
+      - proxy-stone-1
+      - proxy-stone-2
+      - proxy-stone-3
+    restart: unless-stopped
+
+  # Monitoring and observability
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: proxy-stone-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - proxy-stone-discovery
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: proxy-stone-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - proxy-stone-discovery
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  etcd1_data:
+    driver: local
+  etcd2_data:
+    driver: local
+  etcd3_data:
+    driver: local
+  redis_discovery_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  proxy-stone-discovery:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 
