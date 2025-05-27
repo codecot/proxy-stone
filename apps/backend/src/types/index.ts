@@ -2,14 +2,14 @@ import {
   FastifyInstance as OriginalFastifyInstance,
   FastifyRequest,
 } from "fastify";
-import { CacheService } from "../services/cache.js";
-import { RequestLoggerService } from "../services/request-logger.js";
-import { SnapshotManager } from "../services/snapshot-manager.js";
+import { CacheService } from "../modules/cache/services/cache.js";
+import { RequestLoggerService } from "../modules/monitoring/services/request-logger.js";
+import { SnapshotManager } from "../modules/recovery/services/snapshot-manager.js";
 import { DatabaseConfig, StorageConfig } from "../database/types.js";
 import type { FastifyRequest as BaseFastifyRequest } from "fastify";
-import type { MetricsService } from "../services/metrics.js";
-import type { RecoveryService } from "../services/recovery.js";
-import type { ErrorTrackerService } from "../services/error-tracker.js";
+import type { MetricsService } from "../modules/monitoring/services/metrics.js";
+import type { RecoveryService } from "../modules/recovery/services/recovery.js";
+import type { ErrorTrackerService } from "../modules/recovery/services/error-tracker.js";
 
 export interface ApiRequest {
   method: string;
