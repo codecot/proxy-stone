@@ -7,8 +7,8 @@ export interface Database {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
-  query<T = any>(sql: string, params?: any[]): Promise<T[]>;
-  execute(sql: string, params?: any[]): Promise<void>;
+  query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
+  execute(sql: string, params?: unknown[]): Promise<void>;
   transaction<T>(fn: (db: Database) => Promise<T>): Promise<T>;
 }
 
@@ -18,16 +18,20 @@ export async function createDatabase(
   logger: Logger
 ): Promise<Database> {
   switch (config.type) {
-    case "sqlite":
+    case "sqlite": {
       const { SQLiteAdapter } = await import("./adapters/sqlite.js");
       return new SQLiteAdapter(config, logger);
-    case "mysql":
+    }
+    case "mysql": {
       const { MySQLAdapter } = await import("./adapters/mysql.js");
       return new MySQLAdapter(config, logger);
-    case "postgresql":
+    }
+    case "postgresql": {
       const { PostgreSQLAdapter } = await import("./adapters/postgresql.js");
       return new PostgreSQLAdapter(config, logger);
+    }
     default:
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       throw new Error(`Unsupported database type: ${(config as any).type}`);
   }
 }

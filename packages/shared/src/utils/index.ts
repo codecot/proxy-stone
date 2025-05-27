@@ -19,7 +19,7 @@ export async function retry<T>(
 ): Promise<T> {
   const { retries = 3, delay = 1000, backoff = 2 } = options;
   
-  let lastError: Error;
+  let lastError: Error | undefined;
   
   for (let i = 0; i <= retries; i++) {
     try {
@@ -35,7 +35,7 @@ export async function retry<T>(
     }
   }
   
-  throw lastError!;
+  throw lastError ?? new Error('Retry failed with unknown error');
 }
 
 /**
@@ -62,7 +62,7 @@ export function formatBytes(bytes: number, decimals: number = 2): string {
   
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 /**
@@ -78,14 +78,29 @@ export function formatDuration(ms: number): string {
 /**
  * Deep merge two objects
  */
-export function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+export function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
   const result = { ...target };
   
   for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = deepMerge(result[key] || ({} as T[typeof key]), source[key] as any);
-    } else {
-      result[key] = source[key] as any;
+    const sourceValue = source[key];
+    const targetValue = result[key];
+    
+    if (
+      sourceValue && 
+      typeof sourceValue === 'object' && 
+      !Array.isArray(sourceValue) &&
+      targetValue &&
+      typeof targetValue === 'object' &&
+      !Array.isArray(targetValue)
+    ) {
+      // Both are objects, merge recursively
+      result[key] = deepMerge(
+        targetValue as Record<string, unknown>, 
+        sourceValue as Record<string, unknown>
+      ) as T[typeof key];
+    } else if (sourceValue !== undefined) {
+      // Use source value
+      result[key] = sourceValue as T[typeof key];
     }
   }
   

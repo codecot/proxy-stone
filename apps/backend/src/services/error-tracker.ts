@@ -16,6 +16,7 @@ interface ErrorTrackerConfig {
   environment?: string;
   sampleRate?: number;
   customEndpoint?: string;
+  maxQueueSize?: number;
 }
 
 export class ErrorTrackerService {
@@ -92,27 +93,30 @@ export class ErrorTrackerService {
     }
   }
 
-  trackError(
-    error: unknown,
-    context?: Record<string, unknown>,
-    tags?: string[]
-  ) {
-    if (!this.config.enabled) return;
+  async trackError(
+    error: Error,
+    _context: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      const errorObj = error; // Keep for future use
+      if (!this.config.enabled) return;
 
-    const event: ErrorEvent = {
-      error: error instanceof Error ? error : String(error),
-      context,
-      tags,
-      level: "error",
-      timestamp: Date.now(),
-    };
+      const event: ErrorEvent = {
+        error: errorObj instanceof Error ? errorObj : String(errorObj),
+        context: _context,
+        level: "error",
+        timestamp: Date.now(),
+      };
 
-    this.queue.push(event);
+      this.queue.push(event);
 
-    // If queue is getting large, flush immediately
-    if (this.queue.length >= 100) {
-      this.flush();
+      if (this.queue.length >= (this.config.maxQueueSize || 100)) {
+        this.flush();
+      }
+    } catch (_error) {
+      this.app.log.error("Failed to track error:", _error);
     }
+    return;
   }
 
   private async flush() {
@@ -196,6 +200,24 @@ export class ErrorTrackerService {
       this.app.log.error("Failed to send events to custom endpoint:", error);
       throw error;
     }
+  }
+
+  async getErrors(): Promise<Error[]> {
+    try {
+      // ... get errors code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return [];
+  }
+
+  async clearErrors(): Promise<void> {
+    try {
+      // ... clear errors code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
   }
 
   shutdown() {

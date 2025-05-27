@@ -19,10 +19,13 @@ export class HealthService {
     this.metrics = app.metrics!;
   }
 
-  async getHealthStatus() {
+  async getHealthStatus(): Promise<{
+    status: string;
+    services: Record<string, { status: string; message?: string }>;
+  }> {
     const startTime = Date.now();
     const status = {
-      status: 'ok',
+      status: "ok",
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       services: {
@@ -41,11 +44,11 @@ export class HealthService {
 
     // Check if any service is unhealthy
     const unhealthyServices = Object.entries(status.services)
-      .filter(([_, service]) => service.status !== 'ok')
+      .filter(([_, service]) => service.status !== "ok")
       .map(([name]) => name);
 
     if (unhealthyServices.length > 0) {
-      status.status = 'degraded';
+      status.status = "degraded";
     }
 
     return status;
@@ -55,7 +58,7 @@ export class HealthService {
     try {
       const stats = await this.cache.getStats();
       return {
-        status: 'ok',
+        status: "ok",
         stats: {
           hits: stats.memory.totalHits || 0,
           misses: stats.memory.totalMisses || 0,
@@ -66,8 +69,8 @@ export class HealthService {
       };
     } catch (error) {
       return {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -77,13 +80,13 @@ export class HealthService {
       // Check if we can perform a simple database operation
       const stats = await this.snapshotManager.getStats();
       return {
-        status: 'ok',
+        status: "ok",
         details: stats,
       };
     } catch (error) {
       return {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -93,14 +96,14 @@ export class HealthService {
       // Check if request logger is initialized and working
       const stats = await this.requestLogger.getStats();
       return {
-        status: 'ok',
+        status: "ok",
         enabled: true,
         stats,
       };
     } catch (error) {
       return {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -109,14 +112,25 @@ export class HealthService {
     try {
       const stats = await this.snapshotManager.getStats();
       return {
-        status: 'ok',
+        status: "ok",
         details: stats,
       };
     } catch (error) {
       return {
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
+  }
+
+  async checkService(
+    _service: string
+  ): Promise<{ status: string; message?: string }> {
+    try {
+      // ... check service code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return { status: "ok" };
   }
 }

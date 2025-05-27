@@ -520,7 +520,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let medianResponseTime = 0;
       let percentile95 = 0;
       let slowestRequests: any[] = [];
-      let backendPerformance: Record<
+      const backendPerformance: Record<
         string,
         { count: number; avgTime: number }
       > = {};
@@ -613,7 +613,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let cacheHits: any[] = [];
       let cacheMisses: any[] = [];
       let hitRate = 0;
-      let ttlAnalysis: Record<
+      const ttlAnalysis: Record<
         string,
         { hits: number; misses: number; hitRate: number }
       > = {};
@@ -812,8 +812,8 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let errorRequests: any[] = [];
       let serverErrors: any[] = [];
       let clientErrors: any[] = [];
-      let errorsByStatus: Record<number, number> = {};
-      let errorsByBackend: Record<string, number> = {};
+      const errorsByStatus: Record<number, number> = {};
+      const errorsByBackend: Record<string, number> = {};
       let topErrorEndpoints: any[] = [];
       let recentErrors: any[] = [];
 

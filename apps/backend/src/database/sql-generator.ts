@@ -26,7 +26,7 @@ export class SQLGenerator {
         return `INSERT OR REPLACE INTO ${this.escapeIdentifier(tableName)} (${columnList}) VALUES (${placeholders})`;
       case DatabaseDialect.MYSQL:
         return `REPLACE INTO ${this.escapeIdentifier(tableName)} (${columnList}) VALUES (${placeholders})`;
-      case DatabaseDialect.POSTGRESQL:
+      case DatabaseDialect.POSTGRESQL: {
         // For PostgreSQL, we'll need to handle this with ON CONFLICT
         const conflictColumn = columns[0]; // Assume first column is the unique key
         const updateSet = columns
@@ -34,6 +34,7 @@ export class SQLGenerator {
           .map((col) => `${this.escapeIdentifier(col)} = EXCLUDED.${this.escapeIdentifier(col)}`)
           .join(', ');
         return `INSERT INTO ${this.escapeIdentifier(tableName)} (${columnList}) VALUES (${placeholders}) ON CONFLICT (${this.escapeIdentifier(conflictColumn)}) DO UPDATE SET ${updateSet}`;
+      }
       default:
         throw new Error(`Unsupported dialect for INSERT OR REPLACE: ${this.dialect}`);
     }

@@ -373,7 +373,7 @@ export const config: ServerConfig = {
   apiPrefix: cliApiPrefix || process.env.API_PREFIX || "/proxy",
   targetUrl: cliTargetUrl || process.env.TARGET_URL || "https://httpbin.org",
   cacheTTL: defaultTTL, // Legacy support
-  cacheableMethods: cacheableMethods, // Legacy support
+  cacheableMethods, // Legacy support
   // Advanced cache configuration
   cache: {
     ...createDefaultCacheConfig(defaultTTL, cacheableMethods, customRules),

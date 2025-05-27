@@ -3,7 +3,6 @@
 	"version": "1.0.0",
 	"description": "A high-performance HTTP proxy with caching, monitoring, and admin UI",
 	"private": true,
-	"packageManager": "npm@10.0.0",
 	"workspaces": [
 		"apps/*",
 		"packages/*"
@@ -27,11 +26,11 @@
 		"docker:status": "cd docker && docker compose ps"
 	},
 	"devDependencies": {
-		"@types/node": "^22.15.21",
-		"turbo": "^2.5.3",
-		"typescript": "^5.8.3",
-		"prettier": "^3.5.3",
-		"eslint": "^9.27.0"
+		"@types/node": "^20.0.0",
+		"turbo": "^1.10.0",
+		"typescript": "^5.0.0",
+		"prettier": "^3.0.0",
+		"eslint": "^8.0.0"
 	},
 	"engines": {
 		"node": ">=18.0.0",

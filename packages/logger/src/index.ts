@@ -3,11 +3,11 @@ import pino from "pino";
 import type { LogConfig } from "@proxy-stone/shared";
 
 export interface Logger {
-  debug(message: string, ...args: any[]): void;
-  info(message: string, ...args: any[]): void;
-  warn(message: string, ...args: any[]): void;
-  error(message: string | Error, ...args: any[]): void;
-  child(bindings: Record<string, any>): Logger;
+  debug(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string | Error, ...args: unknown[]): void;
+  child(bindings: Record<string, unknown>): Logger;
 }
 
 class ProxyStoneLogger implements Logger {
@@ -35,43 +35,57 @@ class ProxyStoneLogger implements Logger {
     }
   }
 
-  debug(message: string, ...args: any[]): void {
-    this.pino.debug(message, ...args);
+  debug(message: string, ...args: unknown[]): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    this.pino.debug(message, ...(args as any[]));
   }
 
-  info(message: string, ...args: any[]): void {
-    this.pino.info(message, ...args);
+  info(message: string, ...args: unknown[]): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    this.pino.info(message, ...(args as any[]));
   }
 
-  warn(message: string, ...args: any[]): void {
-    this.pino.warn(message, ...args);
+  warn(message: string, ...args: unknown[]): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    this.pino.warn(message, ...(args as any[]));
   }
 
-  error(message: string | Error, ...args: any[]): void {
+  error(message: string | Error, ...args: unknown[]): void {
     if (message instanceof Error) {
-      this.pino.error(message, ...args);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+      this.pino.error(message, ...(args as any[]));
     } else {
-      this.pino.error(message, ...args);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+      this.pino.error(message, ...(args as any[]));
     }
   }
 
-  child(bindings: Record<string, any>): Logger {
-    const childPino = this.pino.child(bindings);
+  child(bindings: Record<string, unknown>): Logger {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    const childPino = this.pino.child(bindings as any);
     return {
-      debug: (message: string, ...args: any[]) =>
-        childPino.debug(message, ...args),
-      info: (message: string, ...args: any[]) =>
-        childPino.info(message, ...args),
-      warn: (message: string, ...args: any[]) =>
-        childPino.warn(message, ...args),
-      error: (message: string | Error, ...args: any[]) => {
+      debug: (message: string, ...args: unknown[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+        childPino.debug(message, ...(args as any[]));
+      },
+      info: (message: string, ...args: unknown[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+        childPino.info(message, ...(args as any[]));
+      },
+      warn: (message: string, ...args: unknown[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+        childPino.warn(message, ...(args as any[]));
+      },
+      error: (message: string | Error, ...args: unknown[]) => {
         if (message instanceof Error) {
-          childPino.error(message, ...args);
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+          childPino.error(message, ...(args as any[]));
         } else {
-          childPino.error(message, ...args);
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+          childPino.error(message, ...(args as any[]));
         }
       },
-      child: (bindings: Record<string, any>) => this.child(bindings),
+      child: (bindings: Record<string, unknown>) => this.child(bindings),
     };
   }
 }
@@ -111,7 +125,7 @@ export function getLogger(): Logger {
 /**
  * Create a child logger with additional context
  */
-export function createChildLogger(bindings: Record<string, any>): Logger {
+export function createChildLogger(bindings: Record<string, unknown>): Logger {
   return getLogger().child(bindings);
 }
 

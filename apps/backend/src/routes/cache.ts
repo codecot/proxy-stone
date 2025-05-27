@@ -57,7 +57,7 @@ interface FreezeToggleBody {
 
 // Global freeze mode state (in production, this would be stored in database/Redis)
 let globalFreezeMode = false;
-let frozenEndpoints: Set<string> = new Set();
+const frozenEndpoints: Set<string> = new Set();
 
 export async function cacheRoutes(fastify: FastifyInstance) {
   const getSnapshotManager = () => (fastify as any).snapshotManager;

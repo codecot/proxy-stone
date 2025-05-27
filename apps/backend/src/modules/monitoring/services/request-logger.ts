@@ -372,7 +372,7 @@ export class RequestLoggerService {
     const bodyStr = typeof body === "string" ? body : JSON.stringify(body);
 
     if (bodyStr.length > this.maxBodySize) {
-      return bodyStr.substring(0, this.maxBodySize) + "... [TRUNCATED]";
+      return `${bodyStr.substring(0, this.maxBodySize)  }... [TRUNCATED]`;
     }
 
     return bodyStr;

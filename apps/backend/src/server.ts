@@ -1,29 +1,28 @@
-import fastify from "fastify";
+import fastify, { type FastifyRequest } from "fastify";
 import { config } from "@/config/index.js";
 import { corsPlugin } from "@/plugins/cors.js";
 import { authPlugin } from "@/plugins/auth.js";
 import { formBodyPlugin } from "@/plugins/formbody.js";
 import { AppInstance } from "@/types/index.js";
 import { DatabaseDialect } from "@/database/types.js";
-import type { FastifyRequest } from "fastify";
 import ajvFormats from "ajv-formats";
 import ajvKeywords from "ajv-keywords";
 
 // Import modules
 import { apiRoutes } from "@/modules/proxy/index.js";
-import { 
-  MetricsService, 
-  RequestLoggerService, 
-  healthRoutes, 
-  healthManagementRoutes, 
-  metricsRoutes 
+import {
+  MetricsService,
+  RequestLoggerService,
+  healthRoutes,
+  healthManagementRoutes,
+  metricsRoutes,
 } from "@/modules/monitoring/index.js";
 import { CacheService, cacheRoutes } from "@/modules/cache/index.js";
 import { AuthService, authRoutes } from "@/modules/auth/index.js";
-import { 
-  RecoveryService, 
-  ErrorTrackerService, 
-  SnapshotManager 
+import {
+  RecoveryService,
+  ErrorTrackerService,
+  SnapshotManager,
 } from "@/modules/recovery/index.js";
 
 interface RateLimitContext {
@@ -60,15 +59,15 @@ export async function createServer(): Promise<AppInstance> {
         allErrors: true,
       },
       plugins: [
-        ajvFormats.default || ajvFormats,
-        ajvKeywords.default || ajvKeywords,
+        ajvFormats.default ?? ajvFormats,
+        ajvKeywords.default ?? ajvKeywords,
       ],
     },
   });
 
   // Initialize services
   const cacheService = new CacheService(
-    config.cache || {
+    config.cache ?? {
       defaultTTL: config.cacheTTL,
       methods: config.cacheableMethods,
       rules: [],
@@ -94,7 +93,7 @@ export async function createServer(): Promise<AppInstance> {
   const requestLoggerService = new RequestLoggerService(
     app,
     config.enableRequestLogging,
-    config.requestLogStorage || {
+    config.requestLogStorage ?? {
       type: "sqlite" as any,
       path: config.requestLogDbPath,
     }
@@ -103,7 +102,7 @@ export async function createServer(): Promise<AppInstance> {
   const snapshotManager = new SnapshotManager(
     app,
     true,
-    config.database || {
+    config.database ?? {
       type: DatabaseDialect.SQLITE,
       path: "./logs/snapshots.db",
     }
@@ -114,8 +113,8 @@ export async function createServer(): Promise<AppInstance> {
     authService = new AuthService(
       config.auth.hashSalt,
       config.auth.jwt.secret,
-      config.auth.jwt.expiresIn || "24h",
-      config.auth.jwt.issuer || "proxy-stone",
+      config.auth.jwt.expiresIn ?? "24h",
+      config.auth.jwt.issuer ?? "proxy-stone",
       config.auth.maxLoginAttempts,
       config.auth.lockoutDuration
     );
@@ -168,7 +167,11 @@ export async function createServer(): Promise<AppInstance> {
       request.url,
       reply.statusCode
     );
-    metricsService.observeRequestDuration(request.method, request.url, duration);
+    metricsService.observeRequestDuration(
+      request.method,
+      request.url,
+      duration
+    );
     done();
   });
 
@@ -188,7 +191,7 @@ export async function createServer(): Promise<AppInstance> {
   }
   app.log.info(`Request logging enabled: ${config.enableRequestLogging}`);
   if (config.enableRequestLogging) {
-    const storageConfig = config.requestLogStorage || {
+    const storageConfig = config.requestLogStorage ?? {
       type: "sqlite" as any,
       path: config.requestLogDbPath,
     };
@@ -310,10 +313,20 @@ export async function createServer(): Promise<AppInstance> {
   await app.register(metricsRoutes, { prefix: "/api" });
 
   // Setup cleanup intervals
-  setupCleanupIntervals(app, cacheService, snapshotManager, requestLoggerService);
+  setupCleanupIntervals(
+    app,
+    cacheService,
+    snapshotManager,
+    requestLoggerService
+  );
 
   // Setup graceful shutdown
-  setupGracefulShutdown(app, cacheService, requestLoggerService, snapshotManager);
+  setupGracefulShutdown(
+    app,
+    cacheService,
+    requestLoggerService,
+    snapshotManager
+  );
 
   return app;
 }
@@ -379,4 +392,4 @@ function setupGracefulShutdown(
 
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-} 
+}

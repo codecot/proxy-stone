@@ -23,7 +23,7 @@ export class FileCacheService {
   private cacheDir: string;
   private enabled: boolean;
 
-  constructor(cacheDir: string = './cache', enabled: boolean = false) {
+  constructor(cacheDir: string = "./cache", enabled: boolean = false) {
     this.cacheDir = cacheDir;
     this.enabled = enabled;
   }
@@ -65,18 +65,18 @@ export class FileCacheService {
         await fs.mkdir(this.cacheDir, { recursive: true });
 
         // Test write permissions
-        const testFile = path.join(this.cacheDir, '.test-write');
+        const testFile = path.join(this.cacheDir, ".test-write");
         try {
-          await fs.writeFile(testFile, 'test', 'utf8');
+          await fs.writeFile(testFile, "test", "utf8");
           await fs.unlink(testFile);
         } catch (error) {
-          console.error('File cache directory is not writable:', error);
+          console.error("File cache directory is not writable:", error);
           this.enabled = false;
           throw error;
         }
       },
       undefined,
-      'initialization'
+      "initialization"
     );
   }
 
@@ -86,20 +86,23 @@ export class FileCacheService {
   private generateFileName(cacheKey: string): string {
     try {
       // Create a hash for very long keys to avoid filesystem limits
-      const hash = crypto.createHash('sha256').update(cacheKey).digest('hex');
+      const hash = crypto.createHash("sha256").update(cacheKey).digest("hex");
 
       // Also create a readable prefix (first 50 chars, sanitized)
-      const prefix = cacheKey.substring(0, 50).replace(/[^a-zA-Z0-9-_]/g, '_');
+      const prefix = cacheKey.substring(0, 50).replace(/[^a-zA-Z0-9-_]/g, "_");
 
       return `${prefix}_${hash.substring(0, 16)}.json`;
     } catch (error) {
-      console.warn('Failed to generate filename, using fallback:', error);
+      console.warn("Failed to generate filename, using fallback:", error);
       // Fallback to simple hash
       try {
-        const fallbackHash = crypto.createHash('md5').update(cacheKey).digest('hex');
+        const fallbackHash = crypto
+          .createHash("md5")
+          .update(cacheKey)
+          .digest("hex");
         return `fallback_${fallbackHash}.json`;
       } catch (fallbackError) {
-        console.error('Fallback filename generation failed:', fallbackError);
+        console.error("Fallback filename generation failed:", fallbackError);
         // Last resort: timestamp-based filename
         return `emergency_${Date.now()}_${Math.random().toString(36).substring(2)}.json`;
       }
@@ -114,9 +117,9 @@ export class FileCacheService {
       const fileName = this.generateFileName(cacheKey);
       return path.join(this.cacheDir, fileName);
     } catch (error) {
-      console.error('Failed to generate file path:', error);
+      console.error("Failed to generate file path:", error);
       // Return a safe fallback path
-      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 50);
       return path.join(this.cacheDir, `fallback_${safeKey}_${Date.now()}.json`);
     }
   }
@@ -130,7 +133,7 @@ export class FileCacheService {
       const expiresAt = entry.createdAt + entry.ttl * 1000;
       return now > expiresAt;
     } catch (error) {
-      console.warn('Failed to check expiry, treating as expired:', error);
+      console.warn("Failed to check expiry, treating as expired:", error);
       return true; // Treat as expired if we can't determine
     }
   }
@@ -162,7 +165,7 @@ export class FileCacheService {
           const dir = path.dirname(filePath);
           await fs.mkdir(dir, { recursive: true });
         } catch (error) {
-          console.warn('Failed to ensure directory exists:', error);
+          console.warn("Failed to ensure directory exists:", error);
           // Continue anyway, might still work
         }
 
@@ -171,13 +174,13 @@ export class FileCacheService {
         try {
           serializedData = JSON.stringify(entry, null, 2);
         } catch (serializationError) {
-          console.error('Failed to serialize cache entry:', serializationError);
+          console.error("Failed to serialize cache entry:", serializationError);
           // Try without pretty printing
           try {
             serializedData = JSON.stringify(entry);
           } catch (fallbackError) {
             console.error(
-              'Failed to serialize cache entry even without formatting:',
+              "Failed to serialize cache entry even without formatting:",
               fallbackError
             );
             throw fallbackError;
@@ -187,7 +190,7 @@ export class FileCacheService {
         // Write to temporary file first, then rename for atomic operation
         const tempPath = `${filePath}.tmp`;
         try {
-          await fs.writeFile(tempPath, serializedData, 'utf8');
+          await fs.writeFile(tempPath, serializedData, "utf8");
           await fs.rename(tempPath, filePath);
         } catch (error) {
           // Clean up temp file if it exists
@@ -200,7 +203,7 @@ export class FileCacheService {
         }
       },
       undefined,
-      'set',
+      "set",
       { cacheKey, status, ttl }
     );
   }
@@ -215,7 +218,7 @@ export class FileCacheService {
 
         let fileContent: string;
         try {
-          fileContent = await fs.readFile(filePath, 'utf8');
+          fileContent = await fs.readFile(filePath, "utf8");
         } catch (error) {
           // File doesn't exist or can't be read
           return null;
@@ -225,12 +228,15 @@ export class FileCacheService {
         try {
           entry = JSON.parse(fileContent);
         } catch (parseError) {
-          console.warn('Failed to parse cache file, removing corrupted file:', parseError);
+          console.warn(
+            "Failed to parse cache file, removing corrupted file:",
+            parseError
+          );
           // Remove corrupted file
           try {
             await fs.unlink(filePath);
           } catch (unlinkError) {
-            console.warn('Failed to remove corrupted cache file:', unlinkError);
+            console.warn("Failed to remove corrupted cache file:", unlinkError);
           }
           return null;
         }
@@ -238,15 +244,15 @@ export class FileCacheService {
         // Validate entry structure
         if (
           !entry ||
-          typeof entry !== 'object' ||
-          typeof entry.createdAt !== 'number' ||
-          typeof entry.ttl !== 'number'
+          typeof entry !== "object" ||
+          typeof entry.createdAt !== "number" ||
+          typeof entry.ttl !== "number"
         ) {
-          console.warn('Invalid cache entry structure, removing file');
+          console.warn("Invalid cache entry structure, removing file");
           try {
             await fs.unlink(filePath);
           } catch (unlinkError) {
-            console.warn('Failed to remove invalid cache file:', unlinkError);
+            console.warn("Failed to remove invalid cache file:", unlinkError);
           }
           return null;
         }
@@ -254,16 +260,21 @@ export class FileCacheService {
         // Check if expired
         if (this.isExpired(entry)) {
           // Delete expired file
-          await this.safeFileOperation(() => this.delete(cacheKey), undefined, 'delete-expired', {
-            cacheKey,
-          });
+          await this.safeFileOperation(
+            () => this.delete(cacheKey),
+            undefined,
+            "delete-expired",
+            {
+              cacheKey,
+            }
+          );
           return null;
         }
 
         return entry;
       },
       null,
-      'get',
+      "get",
       { cacheKey }
     );
   }
@@ -278,7 +289,7 @@ export class FileCacheService {
         await fs.unlink(filePath);
       },
       undefined,
-      'delete',
+      "delete",
       { cacheKey }
     );
   }
@@ -290,10 +301,12 @@ export class FileCacheService {
     return this.safeFileOperation(
       async () => {
         const files = await fs.readdir(this.cacheDir);
-        return files.filter((file) => file.endsWith('.json') && !file.endsWith('.tmp'));
+        return files.filter(
+          (file) => file.endsWith(".json") && !file.endsWith(".tmp")
+        );
       },
       [],
-      'get-all-files'
+      "get-all-files"
     );
   }
 
@@ -310,7 +323,7 @@ export class FileCacheService {
         };
       },
       { size: 0, files: [] },
-      'get-stats'
+      "get-stats"
     );
   }
 
@@ -330,7 +343,7 @@ export class FileCacheService {
 
               let fileContent: string;
               try {
-                fileContent = await fs.readFile(filePath, 'utf8');
+                fileContent = await fs.readFile(filePath, "utf8");
               } catch (error) {
                 // File might have been deleted or is unreadable, skip
                 return;
@@ -345,7 +358,10 @@ export class FileCacheService {
                   await fs.unlink(filePath);
                   cleaned++;
                 } catch (deleteError) {
-                  console.warn('Failed to delete corrupted cache file:', deleteError);
+                  console.warn(
+                    "Failed to delete corrupted cache file:",
+                    deleteError
+                  );
                 }
                 return;
               }
@@ -356,12 +372,15 @@ export class FileCacheService {
                   await fs.unlink(filePath);
                   cleaned++;
                 } catch (deleteError) {
-                  console.warn('Failed to delete expired cache file:', deleteError);
+                  console.warn(
+                    "Failed to delete expired cache file:",
+                    deleteError
+                  );
                 }
               }
             },
             undefined,
-            'clean-file',
+            "clean-file",
             { file }
           );
         }
@@ -369,7 +388,7 @@ export class FileCacheService {
         return cleaned;
       },
       0,
-      'clean-expired'
+      "clean-expired"
     );
   }
 
@@ -390,7 +409,7 @@ export class FileCacheService {
               cleared++;
             },
             undefined,
-            'clear-file',
+            "clear-file",
             { file }
           );
         }
@@ -398,7 +417,7 @@ export class FileCacheService {
         return cleared;
       },
       0,
-      'clear'
+      "clear"
     );
   }
 
@@ -420,12 +439,15 @@ export class FileCacheService {
 
       // Load all entries first
       for (const file of files) {
-        if (!file.endsWith('.json')) continue;
+        if (!file.endsWith(".json")) continue;
 
         try {
-          const data = await fs.readFile(path.join(this.cacheDir, file), 'utf-8');
+          const data = await fs.readFile(
+            path.join(this.cacheDir, file),
+            "utf-8"
+          );
           const entry = JSON.parse(data) as FileCacheEntry;
-          const key = file.replace('.json', '');
+          const key = file.replace(".json", "");
 
           // Convert to memory cache format
           const cacheEntry: FileCacheEntry = {
@@ -483,7 +505,7 @@ export class FileCacheService {
 
       return loadedCount;
     } catch (error) {
-      console.error('Failed to load cache files:', error);
+      console.error("Failed to load cache files:", error);
       return 0;
     }
   }
@@ -492,12 +514,48 @@ export class FileCacheService {
     entry: FileCacheEntry,
     patterns: Array<{ pattern: string; priority: number }>
   ): number {
-    const url = entry.headers['x-original-url'] || '';
+    const url = entry.headers["x-original-url"] || "";
     for (const { pattern, priority } of patterns) {
       if (minimatch(url, pattern)) {
         return priority;
       }
     }
     return 0;
+  }
+
+  private async cleanup(): Promise<void> {
+    try {
+      // ... cleanup code ...
+    } catch (_cleanupError) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  private async loadCache(): Promise<void> {
+    try {
+      // ... load cache code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  private async saveCache(): Promise<void> {
+    try {
+      // ... save cache code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  private async parseCacheEntry(_data: string): Promise<FileCacheEntry | null> {
+    try {
+      // ... parse cache entry code ...
+    } catch (_parseError) {
+      // ... error handling ...
+    }
+    return null;
   }
 }

@@ -325,8 +325,11 @@ export class CacheService {
       const duration = Date.now() - startTime;
       console.log(
         `Cache warmup completed in ${duration}ms: ` +
-          `${loadedCount} entries loaded into memory` +
-          (redisLoadedCount > 0 ? `, ${redisLoadedCount} entries loaded into Redis` : '')
+          `${loadedCount} entries loaded into memory${
+            redisLoadedCount > 0
+              ? `, ${redisLoadedCount} entries loaded into Redis`
+              : ""
+          }`
       );
 
       // Update statistics
@@ -473,7 +476,7 @@ export class CacheService {
   ): number {
     const rule = this.findMatchingRule(method, url, headers, status);
 
-    if (rule && rule.ttl !== undefined) {
+    if (rule?.ttl !== undefined) {
       return rule.ttl;
     }
 

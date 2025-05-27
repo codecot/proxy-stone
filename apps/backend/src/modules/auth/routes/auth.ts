@@ -74,7 +74,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       reply.status(429); // Too Many Requests
       return {
         error: error instanceof Error ? error.message : 'Authentication failed',
-        retry_after: Math.ceil(authConfig.lockoutDuration / 60) + ' minutes',
+        retry_after: `${Math.ceil(authConfig.lockoutDuration / 60)  } minutes`,
       };
     }
   });
@@ -213,7 +213,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         createdAt: key.createdAt,
         lastUsed: key.lastUsed,
         expiresAt: key.expiresAt,
-        key_preview: key.keyHash.substring(0, 8) + '...',
+        key_preview: `${key.keyHash.substring(0, 8)  }...`,
       })),
       total: authConfig.apiKeys.length,
     };

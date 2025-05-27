@@ -16,8 +16,8 @@ export class PostgreSQLAdapter implements DatabaseInterface {
   async connect(): Promise<void> {
     try {
       this.client = new Client({
-        host: this.config.host || "localhost",
-        port: this.config.port || 5432,
+        host: this.config.host ?? "localhost",
+        port: this.config.port ?? 5432,
         user: this.config.username,
         password: this.config.password,
         database: this.config.database,
@@ -48,13 +48,14 @@ export class PostgreSQLAdapter implements DatabaseInterface {
     return this.client !== null;
   }
 
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
     if (!this.client) {
       throw new Error("Database not connected");
     }
 
     try {
-      const result = await this.client.query(sql, params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await this.client.query(sql, params as any[]);
       return result.rows as T[];
     } catch (error) {
       this.logger.error("PostgreSQL query failed", { sql, params, error });
@@ -62,13 +63,14 @@ export class PostgreSQLAdapter implements DatabaseInterface {
     }
   }
 
-  async execute(sql: string, params: any[] = []): Promise<void> {
+  async execute(sql: string, params: unknown[] = []): Promise<void> {
     if (!this.client) {
       throw new Error("Database not connected");
     }
 
     try {
-      await this.client.query(sql, params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this.client.query(sql, params as any[]);
     } catch (error) {
       this.logger.error("PostgreSQL execute failed", { sql, params, error });
       throw error;
