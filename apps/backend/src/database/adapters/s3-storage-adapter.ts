@@ -1,12 +1,4 @@
 import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-  ListObjectsV2Command,
-  HeadObjectCommand,
-} from "@aws-sdk/client-s3";
-import {
   StorageAdapter,
   StorageType,
   SaveOptions,
@@ -28,30 +20,35 @@ export interface S3Config {
 }
 
 export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
-  private s3Client: S3Client;
+  private s3Client: any = null;
   private bucket: string;
   private keyPrefix: string;
 
   constructor(private config: S3Config) {
     this.bucket = config.bucket;
     this.keyPrefix = config.keyPrefix || "";
-
-    this.s3Client = new S3Client({
-      region: config.region,
-      credentials:
-        config.accessKeyId && config.secretAccessKey
-          ? {
-              accessKeyId: config.accessKeyId,
-              secretAccessKey: config.secretAccessKey,
-            }
-          : undefined,
-      endpoint: config.endpoint,
-    });
   }
 
   async initialize(): Promise<void> {
-    // Test connection by listing objects
     try {
+      // Dynamic import of AWS SDK
+      const s3Module = await import("@aws-sdk/client-s3");
+      const S3Client = s3Module.S3Client;
+
+      this.s3Client = new S3Client({
+        region: this.config.region,
+        credentials:
+          this.config.accessKeyId && this.config.secretAccessKey
+            ? {
+                accessKeyId: this.config.accessKeyId,
+                secretAccessKey: this.config.secretAccessKey,
+              }
+            : undefined,
+        endpoint: this.config.endpoint,
+      });
+
+      // Test connection by listing objects
+      const ListObjectsV2Command = s3Module.ListObjectsV2Command;
       await this.s3Client.send(
         new ListObjectsV2Command({
           Bucket: this.bucket,
@@ -60,7 +57,7 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
       );
     } catch (error) {
       throw new Error(
-        `Failed to initialize S3 storage: ${error instanceof Error ? error.message : error}`
+        `Failed to initialize S3 storage: ${error instanceof Error ? error.message : error}. Make sure to install: npm install @aws-sdk/client-s3`
       );
     }
   }
@@ -70,6 +67,11 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async save(key: string, data: T, options?: SaveOptions): Promise<void> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
+    const s3Module = await import("@aws-sdk/client-s3");
+    const PutObjectCommand = s3Module.PutObjectCommand;
+
     const fullKey = this.getFullKey(key);
 
     const metadata: Record<string, string> = {
@@ -112,7 +114,12 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async get(key: string): Promise<T | null> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
     try {
+      const s3Module = await import("@aws-sdk/client-s3");
+      const GetObjectCommand = s3Module.GetObjectCommand;
+
       const fullKey = this.getFullKey(key);
 
       const response = await this.s3Client.send(
@@ -149,7 +156,12 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async delete(key: string): Promise<boolean> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
     try {
+      const s3Module = await import("@aws-sdk/client-s3");
+      const DeleteObjectCommand = s3Module.DeleteObjectCommand;
+
       const fullKey = this.getFullKey(key);
 
       await this.s3Client.send(
@@ -169,7 +181,12 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async exists(key: string): Promise<boolean> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
     try {
+      const s3Module = await import("@aws-sdk/client-s3");
+      const HeadObjectCommand = s3Module.HeadObjectCommand;
+
       const fullKey = this.getFullKey(key);
 
       await this.s3Client.send(
@@ -199,28 +216,34 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async getBatch(keys: string[]): Promise<Array<T | null>> {
+    // S3 doesn't have native batch operations, so we'll do them in parallel
     const promises = keys.map((key) => this.get(key));
     return await Promise.all(promises);
   }
 
   async deleteBatch(keys: string[]): Promise<number> {
+    // S3 doesn't have native batch operations, so we'll do them in parallel
     const promises = keys.map((key) => this.delete(key));
     const results = await Promise.all(promises);
     return results.filter(Boolean).length;
   }
 
   async find(filter: FilterOptions): Promise<T[]> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
+    const s3Module = await import("@aws-sdk/client-s3");
+    const ListObjectsV2Command = s3Module.ListObjectsV2Command;
+
     const results: T[] = [];
     let continuationToken: string | undefined;
-    let collected = 0;
-    const limit = filter.limit || 1000;
+    let itemCount = 0;
 
     do {
       const response = await this.s3Client.send(
         new ListObjectsV2Command({
           Bucket: this.bucket,
           Prefix: this.keyPrefix,
-          MaxKeys: Math.min(1000, limit - collected),
+          MaxKeys: filter.limit || 1000,
           ContinuationToken: continuationToken,
         })
       );
@@ -228,44 +251,54 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
       if (!response.Contents) break;
 
       for (const object of response.Contents) {
-        if (collected >= limit) break;
+        if (filter.offset && itemCount < filter.offset) {
+          itemCount++;
+          continue;
+        }
 
-        if (!object.Key) continue;
+        if (filter.limit && results.length >= filter.limit) {
+          break;
+        }
 
-        const key = this.stripPrefix(object.Key);
+        const key = this.stripPrefix(object.Key || "");
         const data = await this.get(key);
 
-        if (data && this.matchesFilter(data, object, filter)) {
-          results.push(data);
-          collected++;
+        if (data !== null) {
+          // Apply filters
+          let includeItem = true;
+
+          if (filter.createdAfter && object.LastModified) {
+            if (object.LastModified <= filter.createdAfter) {
+              includeItem = false;
+            }
+          }
+
+          if (filter.createdBefore && object.LastModified) {
+            if (object.LastModified >= filter.createdBefore) {
+              includeItem = false;
+            }
+          }
+
+          if (includeItem && this.matchesFilter(data, object, filter)) {
+            results.push(data);
+          }
         }
+
+        itemCount++;
       }
 
       continuationToken = response.NextContinuationToken;
-    } while (continuationToken && collected < limit);
-
-    // Apply sorting if specified
-    if (filter.sortBy) {
-      results.sort((a, b) => {
-        const aVal = this.getNestedValue(a, filter.sortBy!);
-        const bVal = this.getNestedValue(b, filter.sortBy!);
-
-        if (filter.sortOrder === "desc") {
-          return bVal > aVal ? 1 : -1;
-        }
-        return aVal > bVal ? 1 : -1;
-      });
-    }
-
-    // Apply offset
-    if (filter.offset) {
-      return results.slice(filter.offset);
-    }
+    } while (continuationToken && (!filter.limit || results.length < filter.limit));
 
     return results;
   }
 
   async count(filter?: FilterOptions): Promise<number> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
+    const s3Module = await import("@aws-sdk/client-s3");
+    const ListObjectsV2Command = s3Module.ListObjectsV2Command;
+
     let count = 0;
     let continuationToken: string | undefined;
 
@@ -282,17 +315,22 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
       if (!response.Contents) break;
 
       for (const object of response.Contents) {
-        if (!object.Key) continue;
+        // Apply basic filters
+        let includeItem = true;
 
-        if (!filter) {
-          count++;
-          continue;
+        if (filter?.createdAfter && object.LastModified) {
+          if (object.LastModified <= filter.createdAfter) {
+            includeItem = false;
+          }
         }
 
-        const key = this.stripPrefix(object.Key);
-        const data = await this.get(key);
+        if (filter?.createdBefore && object.LastModified) {
+          if (object.LastModified >= filter.createdBefore) {
+            includeItem = false;
+          }
+        }
 
-        if (data && this.matchesFilter(data, object, filter)) {
+        if (includeItem) {
           count++;
         }
       }
@@ -304,6 +342,11 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async cleanup(options?: CleanupOptions): Promise<number> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
+    const s3Module = await import("@aws-sdk/client-s3");
+    const ListObjectsV2Command = s3Module.ListObjectsV2Command;
+
     let deleted = 0;
     let continuationToken: string | undefined;
 
@@ -322,52 +365,39 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
       const keysToDelete: string[] = [];
 
       for (const object of response.Contents) {
-        if (!object.Key) continue;
-
         let shouldDelete = false;
 
         if (options?.expiredOnly) {
           // Check metadata for expiration
+          const key = this.stripPrefix(object.Key || "");
           try {
-            const headResponse = await this.s3Client.send(
-              new HeadObjectCommand({
-                Bucket: this.bucket,
-                Key: object.Key,
-              })
-            );
-
-            const expiresAt = headResponse.Metadata?.["expires-at"];
-            if (expiresAt && new Date() > new Date(expiresAt)) {
-              shouldDelete = true;
+            const data = await this.get(key);
+            if (data === null) {
+              shouldDelete = true; // Already expired/deleted
             }
           } catch (error) {
-            // If we can't read metadata, skip this object
-            continue;
+            shouldDelete = true; // Error accessing, consider for deletion
           }
-        }
-
-        if (options?.olderThan && object.LastModified) {
+        } else if (options?.olderThan && object.LastModified) {
           if (object.LastModified < options.olderThan) {
             shouldDelete = true;
           }
-        }
-
-        if (!options?.expiredOnly && !options?.olderThan) {
-          shouldDelete = true; // Delete all if no specific criteria
+        } else if (!options?.expiredOnly) {
+          shouldDelete = true;
         }
 
         if (shouldDelete) {
-          keysToDelete.push(object.Key);
+          keysToDelete.push(this.stripPrefix(object.Key || ""));
         }
       }
 
-      if (!options?.dryRun && keysToDelete.length > 0) {
-        await this.deleteBatch(
-          keysToDelete.map((key) => this.stripPrefix(key))
-        );
+      if (keysToDelete.length > 0 && !options?.dryRun) {
+        const deleteResults = await this.deleteBatch(keysToDelete);
+        deleted += deleteResults;
+      } else if (options?.dryRun) {
+        deleted += keysToDelete.length;
       }
 
-      deleted += keysToDelete.length;
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
@@ -375,6 +405,11 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   async getStats(): Promise<StorageStats> {
+    if (!this.s3Client) throw new Error("S3 not initialized");
+
+    const s3Module = await import("@aws-sdk/client-s3");
+    const ListObjectsV2Command = s3Module.ListObjectsV2Command;
+
     let totalItems = 0;
     let totalSize = 0;
     let oldestItem: Date | undefined;
@@ -433,18 +468,15 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   private getFullKey(key: string): string {
-    return this.keyPrefix + key;
+    return `${this.keyPrefix}${key}`;
   }
 
   private stripPrefix(fullKey: string): string {
-    return fullKey.startsWith(this.keyPrefix)
-      ? fullKey.slice(this.keyPrefix.length)
-      : fullKey;
+    return fullKey.startsWith(this.keyPrefix) ? fullKey.slice(this.keyPrefix.length) : fullKey;
   }
 
   private async streamToString(stream: Readable): Promise<string> {
     const chunks: Buffer[] = [];
-
     return new Promise((resolve, reject) => {
       stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
       stream.on("error", (err) => reject(err));
@@ -453,25 +485,11 @@ export class S3StorageAdapter<T = any> implements StorageAdapter<T> {
   }
 
   private matchesFilter(data: T, object: any, filter: FilterOptions): boolean {
-    // Check expiration
-    if (filter.expiresAfter || filter.expiresBefore) {
-      // Would need to check object metadata for expiration
-    }
-
-    // Check custom filters
-    if (filter.customFilters) {
-      for (const [key, value] of Object.entries(filter.customFilters)) {
-        const dataValue = this.getNestedValue(data, key);
-        if (dataValue !== value) {
-          return false;
-        }
-      }
-    }
-
+    // Basic filtering - could be extended based on metadata
     return true;
   }
 
   private getNestedValue(obj: any, path: string): any {
-    return path.split(".").reduce((current, key) => current?.[key], obj);
+    return path.split('.').reduce((current, key) => current?.[key], obj);
   }
 }

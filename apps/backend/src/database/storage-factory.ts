@@ -5,7 +5,7 @@ import { StoragePluginRegistry } from "./storage-plugin-registry.js";
 import {
   registerCoreStoragePlugins,
   getCoreStorageDefaults,
-} from "@/plugins/core-storage-plugins.js";
+} from "./plugins/core-storage-plugins.js";
 
 // Re-export types for convenience
 export type { StorageAdapter, StorageConfig } from "./types.js";
@@ -22,7 +22,7 @@ export class StorageFactory {
     if (this.initialized) return;
 
     // Register core storage plugins
-    registerCoreStoragePlugins();
+    await registerCoreStoragePlugins();
 
     // Auto-discover external plugins
     await StoragePluginRegistry.discoverPlugins("./plugins/storage");
@@ -130,6 +130,24 @@ export class StorageFactory {
       case StorageType.LOCAL_FILE:
         if (!config.directory) {
           throw new Error("Directory is required for local file storage");
+        }
+        break;
+
+      case StorageType.REDIS:
+        if (!config.host || !config.port) {
+          throw new Error("Host and port are required for Redis storage");
+        }
+        break;
+
+      case StorageType.MONGODB:
+        if (!config.connectionString || !config.database || !config.collection) {
+          throw new Error("Connection string, database, and collection are required for MongoDB storage");
+        }
+        break;
+
+      case StorageType.S3:
+        if (!config.bucket || !config.region) {
+          throw new Error("Bucket and region are required for S3 storage");
         }
         break;
 

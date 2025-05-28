@@ -1,9 +1,53 @@
 import {
   StoragePluginRegistry,
   StoragePlugin,
-} from "@/database/storage-plugin-registry.js";
-import { StorageType, StorageAdapter, StorageConfig } from "@/database/types.js";
-import { DatabaseFactory } from "@/database/factory.js";
+} from "../storage-plugin-registry.js";
+import { StorageType, StorageAdapter, StorageConfig } from "../types.js";
+import { DatabaseFactory } from "../factory.js";
+
+// Import external storage plugins
+import { 
+  registerExternalStoragePlugins, 
+  getExternalStorageDefaults 
+} from "./external-storage-plugins.js";
+
+// Try to import external storage adapters (they may not be available)
+let RedisStorageAdapter: any = null;
+let MongoStorageAdapter: any = null;
+let S3StorageAdapter: any = null;
+
+// Dynamically import external adapters if dependencies are available
+async function loadExternalAdapters() {
+  try {
+    // Check if ioredis is available first
+    await import("ioredis");
+    const redisModule = await import("../adapters/redis-storage-adapter.js");
+    RedisStorageAdapter = redisModule.RedisStorageAdapter;
+    console.log("✅ Redis storage adapter loaded");
+  } catch (error) {
+    console.debug("Redis adapter not available - ioredis package not installed");
+  }
+
+  try {
+    // Check if mongodb is available first
+    await import("mongodb");
+    const mongoModule = await import("../adapters/mongodb-storage-adapter.js");
+    MongoStorageAdapter = mongoModule.MongoStorageAdapter;
+    console.log("✅ MongoDB storage adapter loaded");
+  } catch (error) {
+    console.debug("MongoDB adapter not available - mongodb package not installed");
+  }
+
+  try {
+    // Check if AWS SDK is available first
+    await import("@aws-sdk/client-s3");
+    const s3Module = await import("../adapters/s3-storage-adapter.js");
+    S3StorageAdapter = s3Module.S3StorageAdapter;
+    console.log("✅ S3 storage adapter loaded");
+  } catch (error) {
+    console.debug("S3 adapter not available - @aws-sdk/client-s3 package not installed");
+  }
+}
 
 // SQL Storage Adapter Wrapper
 class SQLStorageAdapterWrapper<T> implements StorageAdapter<T> {
@@ -388,14 +432,65 @@ const corePlugins: StoragePlugin[] = [
 /**
  * Register all core storage plugins
  */
-export function registerCoreStoragePlugins(): void {
-  for (const plugin of corePlugins) {
+export async function registerCoreStoragePlugins(): Promise<void> {
+  // Load external adapters first
+  await loadExternalAdapters();
+
+  // Create dynamic plugins for external storage types if adapters are available
+  const dynamicPlugins: StoragePlugin[] = [];
+
+  if (RedisStorageAdapter) {
+    dynamicPlugins.push({
+      name: "Redis Storage",
+      type: StorageType.REDIS,
+      description: "Redis storage with TTL and pub/sub support",
+      dependencies: ["ioredis"],
+      configSchema: {
+        required: ["host", "port"],
+      },
+      adapterClass: RedisStorageAdapter,
+    });
+  }
+
+  if (MongoStorageAdapter) {
+    dynamicPlugins.push({
+      name: "MongoDB Storage",
+      type: StorageType.MONGODB,
+      description: "MongoDB storage with TTL and indexing",
+      dependencies: ["mongodb"],
+      configSchema: {
+        required: ["connectionString", "database", "collection"],
+      },
+      adapterClass: MongoStorageAdapter,
+    });
+  }
+
+  if (S3StorageAdapter) {
+    dynamicPlugins.push({
+      name: "AWS S3 Storage",
+      type: StorageType.S3,
+      description: "AWS S3 storage with compression and encryption",
+      dependencies: ["@aws-sdk/client-s3"],
+      configSchema: {
+        required: ["bucket", "region"],
+      },
+      adapterClass: S3StorageAdapter,
+    });
+  }
+
+  // Register core plugins
+  const allPlugins = [...corePlugins, ...dynamicPlugins];
+  
+  for (const plugin of allPlugins) {
     try {
       StoragePluginRegistry.registerPlugin(plugin);
     } catch (error) {
       console.warn(`Failed to register core plugin ${plugin.name}:`, error);
     }
   }
+
+  // Register external placeholder plugins for missing dependencies
+  registerExternalStoragePlugins();
 }
 
 /**
@@ -436,6 +531,43 @@ export function getCoreStorageDefaults(
         type: StorageType.LOCAL_FILE,
         directory: "./storage/snapshots",
       };
+
+    case StorageType.REDIS:
+      return {
+        type: StorageType.REDIS,
+        host: "localhost",
+        port: 6379,
+        keyPrefix: "snapshots:",
+        ttl: 3600, // Default TTL in seconds
+      };
+
+    case StorageType.MONGODB:
+      return {
+        type: StorageType.MONGODB,
+        connectionString: "mongodb://localhost:27017",
+        database: "proxy_stone",
+        collection: "snapshots",
+      };
+
+    case StorageType.S3:
+      return {
+        type: StorageType.S3,
+        bucket: "proxy-stone-snapshots",
+        region: "us-east-1",
+        keyPrefix: "snapshots/",
+        compression: true,
+        encryption: true,
+      };
+
+    // Try external storage defaults
+    case StorageType.DYNAMODB:
+    case StorageType.AZURE_BLOB:
+    case StorageType.GCS:
+      try {
+        return getExternalStorageDefaults(type);
+      } catch (error) {
+        throw new Error(`No default config available for storage type: ${type}`);
+      }
 
     default:
       throw new Error(`No default config available for storage type: ${type}`);

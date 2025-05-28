@@ -1,4 +1,3 @@
-import { MongoClient, Db, Collection, Filter, Sort } from "mongodb";
 import {
   StorageAdapter,
   StorageType,
@@ -33,27 +32,29 @@ interface MongoDocument<T = any> {
 }
 
 export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
-  private client: MongoClient;
-  private db: Db | null = null;
-  private collection: Collection<MongoDocument<T>> | null = null;
+  private client: any = null;
+  private db: any = null;
+  private collection: any = null;
 
-  constructor(private config: MongoConfig) {
-    this.client = new MongoClient(config.connectionString, {
-      maxPoolSize: config.options?.maxPoolSize || 10,
-      minPoolSize: config.options?.minPoolSize || 2,
-      maxIdleTimeMS: config.options?.maxIdleTimeMS || 30000,
-      serverSelectionTimeoutMS:
-        config.options?.serverSelectionTimeoutMS || 5000,
-    });
-  }
+  constructor(private config: MongoConfig) {}
 
   async initialize(): Promise<void> {
     try {
+      // Dynamic import of mongodb
+      const mongodb = await import("mongodb");
+      const MongoClient = mongodb.MongoClient;
+
+      this.client = new MongoClient(this.config.connectionString, {
+        maxPoolSize: this.config.options?.maxPoolSize || 10,
+        minPoolSize: this.config.options?.minPoolSize || 2,
+        maxIdleTimeMS: this.config.options?.maxIdleTimeMS || 30000,
+        serverSelectionTimeoutMS:
+          this.config.options?.serverSelectionTimeoutMS || 5000,
+      });
+
       await this.client.connect();
       this.db = this.client.db(this.config.database);
-      this.collection = this.db.collection<MongoDocument<T>>(
-        this.config.collection
-      );
+      this.collection = this.db.collection(this.config.collection);
 
       // Create indexes for better performance
       await this.collection.createIndex({ key: 1 }, { unique: true });
@@ -66,13 +67,15 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
       await this.collection.createIndex({ lastAccessed: 1 });
     } catch (error) {
       throw new Error(
-        `Failed to initialize MongoDB storage: ${error instanceof Error ? error.message : error}`
+        `Failed to initialize MongoDB storage: ${error instanceof Error ? error.message : error}. Make sure to install: npm install mongodb`
       );
     }
   }
 
   async close(): Promise<void> {
-    await this.client.close();
+    if (this.client) {
+      await this.client.close();
+    }
   }
 
   async save(key: string, data: T, options?: SaveOptions): Promise<void> {
@@ -159,7 +162,11 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
     const documents = await this.collection
       .find({ key: { $in: keys } })
       .toArray();
-    const documentMap = new Map(documents.map((doc) => [doc.key, doc.data]));
+    const documentMap = new Map<string, T>();
+    
+    for (const doc of documents) {
+      documentMap.set(doc.key, doc.data);
+    }
 
     return keys.map((key) => documentMap.get(key) || null);
   }
@@ -174,7 +181,7 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
   async find(filter: FilterOptions): Promise<T[]> {
     if (!this.collection) throw new Error("MongoDB not initialized");
 
-    const mongoFilter: Filter<MongoDocument<T>> = {};
+    const mongoFilter: any = {};
 
     // Handle expiration filters
     if (filter.expiresAfter) {
@@ -198,81 +205,52 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
       };
     }
 
-    // Handle tags
+    // Handle tags filter
     if (filter.tags && filter.tags.length > 0) {
       mongoFilter.tags = { $in: filter.tags };
     }
 
-    // Handle custom filters
-    if (filter.customFilters) {
-      for (const [key, value] of Object.entries(filter.customFilters)) {
-        if (key.startsWith("data.")) {
-          mongoFilter[key as keyof MongoDocument<T>] = value;
-        } else if (key.startsWith("metadata.")) {
-          mongoFilter[key as keyof MongoDocument<T>] = value;
-        } else {
-          mongoFilter[key as keyof MongoDocument<T>] = value;
-        }
-      }
-    }
+    let query = this.collection.find(mongoFilter);
 
-    // Build sort criteria
-    const sort: Sort = {};
+    // Apply sorting
     if (filter.sortBy) {
-      sort[filter.sortBy] = filter.sortOrder === "desc" ? -1 : 1;
-    } else {
-      sort.createdAt = -1; // Default sort by creation date, newest first
+      const sortOrder = filter.sortOrder === "desc" ? -1 : 1;
+      query = query.sort({ [filter.sortBy]: sortOrder });
     }
 
-    let query = this.collection.find(mongoFilter).sort(sort);
-
+    // Apply pagination
+    if (filter.offset) {
+      query = query.skip(filter.offset);
+    }
     if (filter.limit) {
       query = query.limit(filter.limit);
     }
 
-    if (filter.offset) {
-      query = query.skip(filter.offset);
-    }
-
     const documents = await query.toArray();
-    return documents.map((doc) => doc.data);
+    return documents.map((doc: any) => doc.data);
   }
 
   async count(filter?: FilterOptions): Promise<number> {
     if (!this.collection) throw new Error("MongoDB not initialized");
 
-    if (!filter) {
-      return await this.collection.countDocuments();
+    const mongoFilter: any = {};
+
+    if (filter?.tags && filter.tags.length > 0) {
+      mongoFilter.tags = { $in: filter.tags };
     }
 
-    const mongoFilter: Filter<MongoDocument<T>> = {};
-
-    if (filter.expiresAfter) {
-      mongoFilter.expiresAt = { $gt: filter.expiresAfter };
-    }
-    if (filter.expiresBefore) {
-      mongoFilter.expiresAt = { $lt: filter.expiresBefore };
-    }
-    if (filter.createdAfter) {
+    if (filter?.createdAfter) {
       mongoFilter.createdAt = {
         ...mongoFilter.createdAt,
         $gt: filter.createdAfter,
       };
     }
-    if (filter.createdBefore) {
+
+    if (filter?.createdBefore) {
       mongoFilter.createdAt = {
         ...mongoFilter.createdAt,
         $lt: filter.createdBefore,
       };
-    }
-    if (filter.tags && filter.tags.length > 0) {
-      mongoFilter.tags = { $in: filter.tags };
-    }
-
-    if (filter.customFilters) {
-      for (const [key, value] of Object.entries(filter.customFilters)) {
-        mongoFilter[key as keyof MongoDocument<T>] = value;
-      }
     }
 
     return await this.collection.countDocuments(mongoFilter);
@@ -281,25 +259,26 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
   async cleanup(options?: CleanupOptions): Promise<number> {
     if (!this.collection) throw new Error("MongoDB not initialized");
 
-    const filter: Filter<MongoDocument<T>> = {};
+    const now = new Date();
+    let deleteFilter: any = {};
 
     if (options?.expiredOnly) {
-      filter.expiresAt = { $lt: new Date() };
+      deleteFilter.expiresAt = { $lt: now };
     }
 
     if (options?.olderThan) {
-      filter.createdAt = { $lt: options.olderThan };
+      deleteFilter.createdAt = { $lt: options.olderThan };
     }
 
     if (options?.tags && options.tags.length > 0) {
-      filter.tags = { $in: options.tags };
+      deleteFilter.tags = { $in: options.tags };
     }
 
     if (options?.dryRun) {
-      return await this.collection.countDocuments(filter);
+      return await this.collection.countDocuments(deleteFilter);
     }
 
-    const result = await this.collection.deleteMany(filter);
+    const result = await this.collection.deleteMany(deleteFilter);
     return result.deletedCount;
   }
 
@@ -327,20 +306,20 @@ export class MongoStorageAdapter<T = any> implements StorageAdapter<T> {
           { $group: { _id: null, avgAccess: { $avg: "$accessCount" } } },
         ])
         .toArray()
-        .then((result) => Math.round(result[0]?.avgAccess || 0)),
+        .then((result: any[]) => Math.round(result[0]?.avgAccess || 0)),
       this.collection
         .findOne({}, { sort: { createdAt: 1 } })
-        .then((doc) => doc?.createdAt),
+        .then((doc: any) => doc?.createdAt),
       this.collection
         .findOne({}, { sort: { createdAt: -1 } })
-        .then((doc) => doc?.createdAt),
+        .then((doc: any) => doc?.createdAt),
       this.collection.find({}).limit(1000).toArray(), // Sample for size calculation
     ]);
 
     // Estimate total size based on sample
     const avgDocSize =
       sampleDocs.length > 0
-        ? sampleDocs.reduce((sum, doc) => sum + JSON.stringify(doc).length, 0) /
+        ? sampleDocs.reduce((sum: number, doc: any) => sum + JSON.stringify(doc).length, 0) /
           sampleDocs.length
         : 0;
     const estimatedTotalSize = Math.round(avgDocSize * totalItems);
