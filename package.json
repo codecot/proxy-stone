@@ -28,10 +28,10 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.21",
-		"turbo": "^2.5.3",
-		"typescript": "^5.8.3",
+		"eslint": "^9.27.0",
 		"prettier": "^3.5.3",
-		"eslint": "^9.27.0"
+		"turbo": "^2.5.3",
+		"typescript": "^5.8.3"
 	},
 	"engines": {
 		"node": ">=18.0.0",
@@ -55,5 +55,10 @@
 		"name": "Volodymyr Pasichnyk",
 		"email": "vladimir.pasechnik@gmail.com"
 	},
-	"license": "MIT"
+	"license": "MIT",
+	"dependencies": {
+		"csv-parse": "^5.6.0",
+		"lucide-react": "^0.511.0",
+		"puppeteer": "^24.9.0"
+	}
 }
