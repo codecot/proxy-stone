@@ -1,9 +1,10 @@
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
+import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { Role, User, ApiKey, AuthSession } from "@/types/index.js";
 
 export class AuthService {
-  private loginAttempts: Map<string, { count: number; lastAttempt: number }> = new Map();
+  private loginAttempts: Map<string, { count: number; lastAttempt: number }> =
+    new Map();
   private revokedTokens: Set<string> = new Set(); // Track revoked tokens
   private hashSalt: string;
   private maxLoginAttempts: number;
@@ -15,8 +16,8 @@ export class AuthService {
   constructor(
     hashSalt: string,
     jwtSecret: string,
-    jwtExpiresIn: string = '24h',
-    jwtIssuer: string = 'proxy-stone',
+    jwtExpiresIn: string = "24h",
+    jwtIssuer: string = "proxy-stone",
     maxLoginAttempts: number = 5,
     lockoutDuration: number = 900 // 15 minutes
   ) {
@@ -30,17 +31,19 @@ export class AuthService {
 
   // Hash password or API key securely
   hashSecret(secret: string): string {
-    return crypto.pbkdf2Sync(secret, this.hashSalt, 10000, 64, 'sha512').toString('hex');
+    return crypto
+      .pbkdf2Sync(secret, this.hashSalt, 10000, 64, "sha512")
+      .toString("hex");
   }
 
   // Generate secure random API key
   generateApiKey(): string {
-    return crypto.randomBytes(32).toString('hex');
+    return crypto.randomBytes(32).toString("hex");
   }
 
   // Generate session ID
   generateSessionId(): string {
-    return crypto.randomBytes(16).toString('hex');
+    return crypto.randomBytes(16).toString("hex");
   }
 
   // Verify password/API key against hash
@@ -70,7 +73,10 @@ export class AuthService {
   // Record failed login attempt
   recordFailedAttempt(identifier: string): void {
     const now = Date.now();
-    const attempts = this.loginAttempts.get(identifier) || { count: 0, lastAttempt: now };
+    const attempts = this.loginAttempts.get(identifier) || {
+      count: 0,
+      lastAttempt: now,
+    };
 
     attempts.count++;
     attempts.lastAttempt = now;
@@ -87,7 +93,7 @@ export class AuthService {
     userId?: string;
     apiKeyId?: string;
     role: Role;
-    type: 'user' | 'apikey';
+    type: "user" | "apikey";
   }): string {
     return jwt.sign(payload, this.jwtSecret, {
       expiresIn: this.jwtExpiresIn,
@@ -97,9 +103,12 @@ export class AuthService {
   }
 
   // Verify and decode JWT token
-  verifyToken(
-    token: string
-  ): { userId?: string; apiKeyId?: string; role: Role; type: 'user' | 'apikey' } | null {
+  verifyToken(token: string): {
+    userId?: string;
+    apiKeyId?: string;
+    role: Role;
+    type: "user" | "apikey";
+  } | null {
     try {
       // Check if token is revoked
       if (this.revokedTokens.has(token)) {
@@ -137,7 +146,9 @@ export class AuthService {
     const identifier = ipAddress || username;
 
     if (this.isLockedOut(identifier)) {
-      throw new Error('Account temporarily locked due to too many failed attempts');
+      throw new Error(
+        "Account temporarily locked due to too many failed attempts"
+      );
     }
 
     const user = users.find((u) => u.username === username && u.enabled);
@@ -151,7 +162,7 @@ export class AuthService {
     const token = this.generateToken({
       userId: user.id,
       role: user.role,
-      type: 'user',
+      type: "user",
     });
 
     return { token, user };
@@ -163,10 +174,12 @@ export class AuthService {
     apiKeys: ApiKey[],
     ipAddress?: string
   ): { token: string; apiKey: ApiKey } | null {
-    const identifier = ipAddress || 'api-key';
+    const identifier = ipAddress || "api-key";
 
     if (this.isLockedOut(identifier)) {
-      throw new Error('API key temporarily locked due to too many failed attempts');
+      throw new Error(
+        "API key temporarily locked due to too many failed attempts"
+      );
     }
 
     const keyConfig = apiKeys.find((k) => {
@@ -185,7 +198,7 @@ export class AuthService {
     const token = this.generateToken({
       apiKeyId: keyConfig.id,
       role: keyConfig.role,
-      type: 'apikey',
+      type: "apikey",
     });
 
     return { token, apiKey: keyConfig };
@@ -199,45 +212,50 @@ export class AuthService {
   }
 
   // Create new user (admin function)
-  createUser(username: string, password: string, role: Role): User {
+  async createUser(
+    username: string,
+    password: string,
+    role: Role = Role.USER
+  ): Promise<User> {
     const userId = crypto.randomUUID();
-    const passwordHash = this.hashSecret(password);
+    const passwordHash = await this.hashSecret(password);
+    const now = new Date().toISOString();
 
     return {
       id: userId,
       username,
+      password,
       passwordHash,
       role,
       enabled: true,
-      createdAt: new Date().toISOString(),
+      isActive: true,
+      permissions: [],
+      createdAt: now,
+      lastLogin: undefined,
     };
   }
 
   // Create new API key (admin function)
-  createApiKey(
-    name: string,
-    role: Role,
-    expiresInDays?: number
-  ): { apiKey: ApiKey; plainKey: string } {
+  async createApiKey(name: string, role: Role = Role.USER): Promise<ApiKey> {
     const keyId = crypto.randomUUID();
-    const plainKey = this.generateApiKey();
-    const keyHash = this.hashSecret(plainKey);
-
-    const expiresAt = expiresInDays
-      ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
-      : undefined;
+    const key = crypto.randomBytes(32).toString("hex");
+    const keyHash = await this.hashSecret(key);
+    const now = new Date().toISOString();
 
     const apiKey: ApiKey = {
       id: keyId,
+      key,
       keyHash,
-      role,
       name,
+      role,
       enabled: true,
-      createdAt: new Date().toISOString(),
-      expiresAt,
+      permissions: [],
+      createdAt: now,
+      lastUsed: undefined,
+      expiresAt: undefined,
     };
 
-    return { apiKey, plainKey };
+    return apiKey;
   }
 
   // Get auth statistics

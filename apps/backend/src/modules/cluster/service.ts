@@ -31,10 +31,32 @@ export class ClusterService {
     dbAdapter?: DatabaseAdapter
   ) {
     this.app = app;
-    this.config = config;
+
+    // Set defaults for required configuration properties
+    const defaults: Required<ClusterConfig> = {
+      enabled: true,
+      clusterId: "default-cluster",
+      heartbeatInterval: 30,
+      nodeTimeout: 60,
+      healthCheckInterval: 10,
+      autoRegister: false,
+      defaultRole: NodeRole.WORKER,
+      tags: [],
+      defaultCapabilities: {},
+      maxNodes: 100,
+      nodeId: undefined,
+      metadata: undefined,
+      storage: { type: "memory" },
+    };
+
+    this.config = {
+      ...defaults,
+      ...config,
+      storage: config.storage || defaults.storage,
+    };
 
     // Initialize repository if using database storage
-    if (this.config.storage.type === "sqlite" && dbAdapter) {
+    if (this.config.storage.type === "database" && dbAdapter) {
       this.repository = new ClusterRepository(dbAdapter);
     }
   }

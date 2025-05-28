@@ -284,16 +284,18 @@ export async function clusterRoutes(fastify: FastifyInstance) {
         // Apply filters
         if (request.query.clusterId) {
           nodes = nodes.filter(
-            (node) => node.clusterId === request.query.clusterId
+            (node: any) => node.clusterId === request.query.clusterId
           );
         }
 
         if (request.query.status) {
-          nodes = nodes.filter((node) => node.status === request.query.status);
+          nodes = nodes.filter(
+            (node: any) => node.status === request.query.status
+          );
         }
 
         if (request.query.role) {
-          nodes = nodes.filter((node) => node.role === request.query.role);
+          nodes = nodes.filter((node: any) => node.role === request.query.role);
         }
 
         return reply.send({
@@ -318,8 +320,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/nodes/:nodeId",
     {
       schema: {
-        description: "Get details of a specific node",
-        tags: ["cluster"],
         params: {
           type: "object",
           properties: {
@@ -404,8 +404,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/nodes/:nodeId/enable",
     {
       schema: {
-        description: "Enable/activate a node",
-        tags: ["cluster"],
         params: {
           type: "object",
           properties: {
@@ -413,6 +411,7 @@ export async function clusterRoutes(fastify: FastifyInstance) {
           },
           required: ["nodeId"],
         },
+        body: nodeStatusUpdateSchema,
         response: {
           200: {
             type: "object",
@@ -480,8 +479,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/nodes/:nodeId/disable",
     {
       schema: {
-        description: "Disable/deactivate a node",
-        tags: ["cluster"],
         params: {
           type: "object",
           properties: {
@@ -556,8 +553,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/nodes/:nodeId",
     {
       schema: {
-        description: "Remove a node from the cluster",
-        tags: ["cluster"],
         params: {
           type: "object",
           properties: {
@@ -629,8 +624,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/health",
     {
       schema: {
-        description: "Get cluster health status",
-        tags: ["cluster"],
         response: {
           200: {
             type: "object",
@@ -706,8 +699,6 @@ export async function clusterRoutes(fastify: FastifyInstance) {
     "/status",
     {
       schema: {
-        description: "Get current node status",
-        tags: ["cluster"],
         response: {
           200: {
             type: "object",

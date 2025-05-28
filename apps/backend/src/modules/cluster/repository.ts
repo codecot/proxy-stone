@@ -161,25 +161,21 @@ export class ClusterRepository {
     return rows[0]?.count || 0;
   }
 
-  async getNodeCountByStatus(): Promise<Record<NodeStatus, number>> {
-    const sql = `
-      SELECT status, COUNT(*) as count 
-      FROM ${this.tableName} 
-      GROUP BY status
-    `;
-    const rows = await this.db.query<{ status: NodeStatus; count: number }>(
-      sql
-    );
+  async getNodeStatusCounts(): Promise<Record<NodeStatus, number>> {
+    const sql = `SELECT status, COUNT(*) as count FROM ${this.tableName} GROUP BY status`;
+    const result = await this.db.query(sql);
 
     const counts: Record<NodeStatus, number> = {
       [NodeStatus.ACTIVE]: 0,
       [NodeStatus.INACTIVE]: 0,
       [NodeStatus.DISABLED]: 0,
+      [NodeStatus.MAINTENANCE]: 0,
+      [NodeStatus.ERROR]: 0,
       [NodeStatus.UNHEALTHY]: 0,
     };
 
-    for (const row of rows) {
-      counts[row.status] = row.count;
+    for (const row of result) {
+      counts[row.status as NodeStatus] = row.count;
     }
 
     return counts;

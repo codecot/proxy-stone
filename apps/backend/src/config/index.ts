@@ -111,30 +111,31 @@ const createDefaultCacheConfig = (
   customRules: CacheRule[] = []
 ): CacheConfig => {
   return {
+    enabled: true,
     defaultTTL,
-    methods: cacheableMethods,
+    maxSize: 10000,
     rules: [
-      // Default rules for common patterns
+      // Default rules for common patterns (fixed regex patterns)
       {
-        pattern: "*/health*",
+        pattern: ".*/health.*",
         methods: ["GET"],
         ttl: 30, // Health endpoints cached for 30 seconds
         enabled: true,
       },
       {
-        pattern: "*/search*",
+        pattern: ".*/search.*",
         methods: ["GET", "POST"],
         ttl: 300, // Search results cached for 5 minutes
         enabled: true,
       },
       {
-        pattern: "*/users/*",
+        pattern: ".*/users/.*",
         methods: ["GET"],
         ttl: 600, // User data cached for 10 minutes
         enabled: true,
       },
       {
-        pattern: "*/config*",
+        pattern: ".*/config.*",
         methods: ["GET"],
         ttl: 3600, // Configuration data cached for 1 hour
         enabled: true,
@@ -142,18 +143,16 @@ const createDefaultCacheConfig = (
       ...customRules, // Custom rules take precedence
     ],
     keyOptions: {
-      includeHeaders: ["authorization", "x-user-id", "x-tenant-id"],
-      excludeHeaders: ["user-agent", "accept-encoding", "connection"],
-      normalizeUrl: true,
       hashLongKeys: true,
       maxKeyLength: 200,
+      includeHeaders: ["authorization", "x-user-id", "x-tenant-id"],
     },
-    behavior: {
-      warmupEnabled: true, // Enable cache warmup by default
-      backgroundCleanup: true,
-      cleanupInterval: 600, // Clean every 10 minutes
-      maxSize: 10000, // Maximum 10k cache entries
-      evictionPolicy: "lru",
+    redis: {
+      enabled: false,
+      host: "localhost",
+      port: 6379,
+      db: 0,
+      prefix: "proxy:cache:",
     },
   };
 };
@@ -376,6 +375,7 @@ export const config: ServerConfig = {
   // Advanced cache configuration
   cache: {
     ...createDefaultCacheConfig(defaultTTL, cacheableMethods, customRules),
+    maxSize: Number(cliCacheMaxSize || process.env.CACHE_MAX_SIZE) || 10000,
     keyOptions: {
       ...createDefaultCacheConfig(defaultTTL, cacheableMethods).keyOptions,
       includeHeaders: [
@@ -384,15 +384,6 @@ export const config: ServerConfig = {
         ...additionalKeyHeaders,
       ],
     },
-    behavior: {
-      ...createDefaultCacheConfig(defaultTTL, cacheableMethods).behavior,
-      maxSize: Number(cliCacheMaxSize || process.env.CACHE_MAX_SIZE) || 10000,
-      cleanupInterval:
-        Number(cliCacheCleanupInterval || process.env.CACHE_CLEANUP_INTERVAL) ||
-        600,
-      warmupEnabled:
-        cliEnableCacheWarmup || process.env.ENABLE_CACHE_WARMUP === "true",
-    },
     // Redis configuration
     redis: {
       enabled: cliRedisEnabled || process.env.ENABLE_REDIS === "true",
@@ -400,10 +391,8 @@ export const config: ServerConfig = {
       port: Number(cliRedisPort || process.env.REDIS_PORT) || 6379,
       password: cliRedisPassword || process.env.REDIS_PASSWORD,
       db: Number(cliRedisDb || process.env.REDIS_DB) || 0,
-      keyPrefix:
+      prefix:
         cliRedisKeyPrefix || process.env.REDIS_KEY_PREFIX || "proxy:cache:",
-      connectTimeout: 10000,
-      lazyConnect: true,
     },
   },
   // File cache configuration

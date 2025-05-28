@@ -20,14 +20,62 @@ import {
   ErrorContext,
 } from "@/utils/response.js";
 
+// Log message constants
+const LOG_MESSAGES = {
+  REGISTERING_ROUTES: "Registering proxy API routes under:",
+  TARGET_SERVER: "Target server:",
+  CACHEABLE_METHODS: "Cacheable methods:",
+  MEMORY_CACHE_ENABLED: "Memory cache enabled:",
+  FILE_CACHE_ENABLED: "File cache enabled:",
+  FILE_CACHE_DIRECTORY: "File cache directory:",
+  REQUEST_LOGGING_ENABLED: "Request logging enabled:",
+  AUTHENTICATION_REQUIRED: "Authentication required:",
+  DEFAULT_CACHE_TTL: "Default cache TTL:",
+  CACHE_MAX_SIZE: "Cache max size:",
+  REDIS_CACHE_ENABLED: "Redis cache enabled:",
+} as const;
+
 export async function apiRoutes(fastify: FastifyInstance) {
   const apiRoutePath = `${fastify.config.apiPrefix}/*`;
 
-  fastify.log.info(`Registering API routes under: ${apiRoutePath}`);
-  fastify.log.info(`Target server: ${fastify.config.targetUrl}`);
+  // Enhanced logging with comprehensive proxy configuration details
+  fastify.log.info(`${LOG_MESSAGES.REGISTERING_ROUTES} ${apiRoutePath}`);
+  fastify.log.info(`${LOG_MESSAGES.TARGET_SERVER} ${fastify.config.targetUrl}`);
   fastify.log.info(
-    `Cacheable methods: ${fastify.config.cacheableMethods.join(", ")}`
+    `${LOG_MESSAGES.CACHEABLE_METHODS} ${fastify.config.cacheableMethods.join(", ")}`
   );
+
+  // Additional configuration details
+  fastify.log.info(
+    `${LOG_MESSAGES.MEMORY_CACHE_ENABLED} ${fastify.config.cache?.enabled || true}`
+  );
+  fastify.log.info(
+    `${LOG_MESSAGES.FILE_CACHE_ENABLED} ${fastify.config.enableFileCache}`
+  );
+  fastify.log.info(
+    `${LOG_MESSAGES.FILE_CACHE_DIRECTORY} ${fastify.config.fileCacheDir}`
+  );
+  fastify.log.info(
+    `${LOG_MESSAGES.REQUEST_LOGGING_ENABLED} ${fastify.config.enableRequestLogging}`
+  );
+  fastify.log.info(
+    `${LOG_MESSAGES.AUTHENTICATION_REQUIRED} ${fastify.config.auth?.enabled || false}`
+  );
+
+  // Cache-specific settings
+  if (fastify.config.cache?.enabled !== false) {
+    fastify.log.info(
+      `${LOG_MESSAGES.DEFAULT_CACHE_TTL} ${fastify.config.cache?.defaultTTL || fastify.config.cacheTTL} seconds`
+    );
+    fastify.log.info(
+      `${LOG_MESSAGES.CACHE_MAX_SIZE} ${fastify.config.cache?.maxSize || "unlimited"} entries`
+    );
+    if (fastify.config.cache?.redis?.enabled) {
+      fastify.log.info(
+        `${LOG_MESSAGES.REDIS_CACHE_ENABLED} ${fastify.config.cache.redis.host}:${fastify.config.cache.redis.port}`
+      );
+    }
+  }
 
   // API route handler for all methods and paths under the configured apiPrefix
   fastify.all(
@@ -46,6 +94,37 @@ export async function apiRoutes(fastify: FastifyInstance) {
       let errorContext: ErrorContext | null = null;
 
       try {
+        // Check if cluster service is in maintenance mode
+        if (fastify.cluster && !fastify.cluster.isServing()) {
+          const serviceStatus = fastify.cluster.getServiceStatus();
+
+          statusCode = 503;
+          responseData = {
+            error: "Service Unavailable",
+            message: "Service is currently in maintenance mode",
+            mode: serviceStatus.mode,
+            retryAfter: 60, // Suggest retry after 60 seconds
+            timestamp: new Date().toISOString(),
+          };
+
+          // Log maintenance mode request
+          fastify.log.warn(
+            {
+              method: request.method,
+              url: request.url,
+              clientIp: request.ip,
+              userAgent: request.headers["user-agent"],
+              serviceMode: serviceStatus.mode,
+            },
+            "Request blocked - service in maintenance mode"
+          );
+
+          reply.status(503);
+          reply.header("Retry-After", "60");
+          reply.header("X-Service-Mode", serviceStatus.mode);
+          return responseData;
+        }
+
         // Step 1: Process incoming request (wrapped in try/catch)
         try {
           processedRequest = processRequest(request, fastify.config.targetUrl);

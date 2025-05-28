@@ -17,13 +17,15 @@ import {
   healthManagementRoutes,
   metricsRoutes,
 } from "@/modules/monitoring/index.js";
-import { CacheService, cacheRoutes } from "@/modules/cache/index.js";
+import { CacheService } from "@/modules/cache/services/cache.js";
+import { cacheRoutes } from "@/modules/cache/index.js";
 import { AuthService, authRoutes } from "@/modules/auth/index.js";
 import {
   RecoveryService,
   ErrorTrackerService,
   SnapshotManager,
 } from "@/modules/recovery/index.js";
+import { registerCluster } from "@/modules/cluster/index.js";
 
 interface RateLimitContext {
   after: string;
@@ -68,22 +70,14 @@ export async function createServer(): Promise<AppInstance> {
   // Initialize services
   const cacheService = new CacheService(
     config.cache ?? {
+      enabled: true,
       defaultTTL: config.cacheTTL,
-      methods: config.cacheableMethods,
+      maxSize: 10000,
       rules: [],
       keyOptions: {
-        includeHeaders: ["authorization"],
-        excludeHeaders: ["user-agent", "accept-encoding"],
-        normalizeUrl: true,
         hashLongKeys: true,
         maxKeyLength: 200,
-      },
-      behavior: {
-        warmupEnabled: true,
-        backgroundCleanup: true,
-        cleanupInterval: 600,
-        maxSize: 10000,
-        evictionPolicy: "lru",
+        includeHeaders: [],
       },
     },
     config.fileCacheDir,
@@ -182,9 +176,7 @@ export async function createServer(): Promise<AppInstance> {
 
   // Log configuration
   app.log.info(`Cache TTL: ${config.cacheTTL} seconds`);
-  app.log.info(
-    `Cache warmup enabled: ${config.cache?.behavior?.warmupEnabled || false}`
-  );
+  app.log.info(`Cache enabled: ${config.cache?.enabled || true}`);
   app.log.info(`File cache enabled: ${config.enableFileCache}`);
   if (config.enableFileCache) {
     app.log.info(`File cache directory: ${config.fileCacheDir}`);
@@ -311,6 +303,7 @@ export async function createServer(): Promise<AppInstance> {
   await app.register(authRoutes, { prefix: "/api" });
   await app.register(healthManagementRoutes, { prefix: "/api" });
   await app.register(metricsRoutes, { prefix: "/api" });
+  await app.register(registerCluster, { prefix: "/api" });
 
   // Setup cleanup intervals
   setupCleanupIntervals(

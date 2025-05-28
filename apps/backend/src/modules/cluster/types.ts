@@ -1,15 +1,19 @@
 export enum NodeStatus {
   ACTIVE = "active",
-  INACTIVE = "inactive",
   DISABLED = "disabled",
+  MAINTENANCE = "maintenance",
+  ERROR = "error",
+  INACTIVE = "inactive",
   UNHEALTHY = "unhealthy",
 }
 
 export enum NodeRole {
+  MASTER = "master",
+  WORKER = "worker",
+  BACKUP = "backup",
   DEFAULT = "default",
-  READ_ONLY = "read-only",
-  MONITOR_ONLY = "monitor-only",
-  DISABLED = "disabled",
+  READ_ONLY = "read_only",
+  ADMIN = "admin",
 }
 
 export interface NodeCapabilities {
@@ -37,11 +41,11 @@ export interface ClusterNode {
 }
 
 export interface NodeRegistrationRequest {
-  id?: string; // Optional, will be generated if not provided
+  id?: string;
   url: string;
   clusterId?: string;
   tags?: string[];
-  capabilities?: NodeCapabilities;
+  capabilities?: Record<string, boolean>;
   role?: NodeRole;
   metadata?: Record<string, any>;
   version?: string;
@@ -52,7 +56,7 @@ export interface NodeRegistrationRequest {
 export interface NodeHeartbeatRequest {
   status?: NodeStatus;
   metadata?: Record<string, any>;
-  capabilities?: NodeCapabilities;
+  capabilities?: Record<string, boolean>;
 }
 
 export interface NodeHealthStatus {
@@ -83,14 +87,21 @@ export interface ClusterHealthResponse {
 
 export interface ClusterConfig {
   enabled: boolean;
-  nodeId?: string; // Current node ID
-  clusterId?: string; // Cluster this node belongs to
-  heartbeatInterval: number; // Heartbeat interval in seconds
-  nodeTimeout: number; // Node timeout in seconds (when to mark as inactive)
-  healthCheckInterval: number; // Health check interval in seconds
-  storage: {
-    type: "redis" | "sqlite";
-    // Redis configuration
+  clusterId?: string;
+  heartbeatInterval?: number;
+  nodeTimeout?: number;
+  healthCheckInterval?: number;
+  autoRegister?: boolean;
+  defaultRole?: NodeRole;
+  tags?: string[];
+  defaultCapabilities?: NodeCapabilities;
+  maxNodes?: number;
+  nodeId?: string;
+  metadata?: Record<string, any>;
+  storage?: {
+    type: "memory" | "file" | "database" | "redis";
+    path?: string;
+    tableName?: string;
     redis?: {
       host: string;
       port: number;
@@ -98,14 +109,5 @@ export interface ClusterConfig {
       db?: number;
       keyPrefix?: string;
     };
-    // SQLite configuration
-    sqlite?: {
-      path: string;
-    };
   };
-  autoRegister: boolean; // Auto-register this node on startup
-  defaultCapabilities: NodeCapabilities;
-  defaultRole: NodeRole;
-  tags: string[];
-  metadata?: Record<string, any>;
 }
