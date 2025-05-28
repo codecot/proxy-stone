@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import { FileCacheService, FileCacheEntry } from './file-cache.js';
-import { CacheConfig, CacheRule } from '../types/index.js';
+import { CacheConfig, CacheRule } from "@/types/index.js";
 import { minimatch } from 'minimatch';
 import type { FastifyInstance } from 'fastify';
-import { CacheError } from '../types/errors.js';
+import { CacheError } from "@/types/errors.js";
 
 // Redis integration (conditional import)
 let Redis: any = null;

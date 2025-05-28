@@ -13,11 +13,11 @@ import {
   FilterOptions,
   CleanupOptions,
   StorageStats,
-} from "../database/types.js";
+} from "@/database/types.js";
 import {
   StoragePluginRegistry,
   StoragePlugin,
-} from "../database/storage-plugin-registry.js";
+} from "@/database/storage-plugin-registry.js";
 
 // Example 1: MongoDB Storage Plugin
 // This would be in a separate package: @proxy-stone/storage-mongodb

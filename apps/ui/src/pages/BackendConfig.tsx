@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -37,7 +37,7 @@ import {
   backendConfigService,
   type BackendInstance,
   type BackendConfig,
-} from '../services/backendConfig';
+} from '@/services/backendConfig';
 
 interface AddBackendDialogProps {
   open: boolean;
@@ -283,7 +283,7 @@ export default function BackendConfig() {
         </Typography>
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <FormControl fullWidth>
               <InputLabel>Mode</InputLabel>
               <Select
@@ -297,7 +297,7 @@ export default function BackendConfig() {
             </FormControl>
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <FormControlLabel
               control={
                 <Switch
@@ -329,7 +329,7 @@ export default function BackendConfig() {
 
       <Grid container spacing={2}>
         {config.backends.map((backend) => (
-          <Grid item xs={12} md={6} lg={4} key={backend.id}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }} key={backend.id}>
             <Card
               sx={{
                 border: backend.id === config.activeBackendId ? 2 : 1,

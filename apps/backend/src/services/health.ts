@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import type { CacheService } from './cache.js';
-import type { RequestLoggerService } from './request-logger.js';
-import type { SnapshotManager } from './snapshot-manager.js';
-import type { MetricsService } from './metrics.js';
+import type { CacheService } from '@/modules/cache/services/cache.js';
+import type { RequestLoggerService } from '@/modules/monitoring/services/request-logger.js';
+import type { SnapshotManager } from '@/modules/recovery/services/snapshot-manager.js';
+import type { MetricsService } from '@/modules/monitoring/services/metrics.js';
 
 export class HealthService {
   private app: FastifyInstance;

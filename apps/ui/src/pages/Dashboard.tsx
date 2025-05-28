@@ -1,7 +1,7 @@
 import { Box, Typography, Paper, CircularProgress, Chip } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { apiService } from '../services/api';
-import { backendConfigService } from '../services/backendConfig';
+import { apiService } from '@/services/api';
+import { backendConfigService } from '@/services/backendConfig';
 
 interface BackendStatus {
   host: string;

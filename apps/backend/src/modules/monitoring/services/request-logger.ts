@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { DatabaseError } from "../../../types/errors.js";
-import { StorageFactory } from "../../../database/storage-factory.js";
+import { DatabaseError } from "@/types/errors.js";
+import { StorageFactory } from "@/database/storage-factory.js";
 import {
   StorageAdapter,
   StorageConfig,
   StorageType,
-} from "../../../database/types.js";
+} from "@/database/types.js";
 
 export interface LoggedRequest {
   id?: string; // Changed from number to string for better storage plugin compatibility

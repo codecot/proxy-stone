@@ -5,7 +5,7 @@ import { StoragePluginRegistry } from "./storage-plugin-registry.js";
 import {
   registerCoreStoragePlugins,
   getCoreStorageDefaults,
-} from "./plugins/core-storage-plugins.js";
+} from "@/plugins/core-storage-plugins.js";
 
 // Re-export types for convenience
 export type { StorageAdapter, StorageConfig } from "./types.js";

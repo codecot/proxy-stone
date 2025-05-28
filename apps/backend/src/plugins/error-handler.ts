@@ -1,5 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
-import { ProxyError, createErrorResponse } from "../types/errors.js";
+import { ProxyError, createErrorResponse } from "@/types/errors.js";
 
 export const errorHandler: FastifyPluginAsync = async (fastify) => {
   fastify.setErrorHandler((error, request, reply) => {

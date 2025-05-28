@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { ProxyError } from "../../../types/errors.js";
+import { ProxyError } from "@/types/errors.js";
 
 interface ErrorEvent {
   error: Error | string;

@@ -2,8 +2,8 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   RequestLoggerService,
   RequestFilters,
-} from "../modules/monitoring/services/request-logger.js";
-import { createErrorResponse } from "../utils/response.js";
+} from "@/modules/monitoring/services/request-logger.js";
+import { createErrorResponse } from "@/utils/response.js";
 
 interface RequestsQuery {
   method?: string;

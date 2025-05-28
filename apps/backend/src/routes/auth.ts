@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { requireAdmin, requireReadAccess } from '../plugins/auth.js';
-import { Role } from '../types/index.js';
+import { requireAdmin, requireReadAccess } from "@/plugins/auth.js";
+import { Role } from "@/types/index.js";
 
 interface LoginRequest {
   username: string;

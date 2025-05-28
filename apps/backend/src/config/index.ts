@@ -3,15 +3,14 @@ import {
   CacheConfig,
   CacheRule,
   AuthConfig,
-  Role,
   ApiKey,
-} from "../types/index.js";
+} from "@/types/index.js";
 import {
   DatabaseConfig,
   DatabaseDialect,
   DatabaseFactory,
   StorageConfig,
-} from "../database/index.js";
+} from "@/database/index.js";
 
 // Helper function to parse command line arguments (gets the LAST occurrence to allow overriding)
 const getArgValue = (argName: string): string | undefined => {

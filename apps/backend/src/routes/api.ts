@@ -5,9 +5,9 @@ import {
   extractBackendInfo,
   calculateRequestSize,
   calculateResponseSize,
-} from "../utils/request.js";
-import { checkCacheAndServe, storeInCache } from "../utils/cache.js";
-import { forwardRequest } from "../utils/http-client.js";
+} from "@/utils/request.js";
+import { checkCacheAndServe, storeInCache } from "@/utils/cache.js";
+import { forwardRequest } from "@/utils/http-client.js";
 import {
   setResponseHeaders,
   createErrorResponse,
@@ -18,7 +18,7 @@ import {
   logErrorResponse,
   categorizeError,
   ErrorContext,
-} from "../utils/response.js";
+} from "@/utils/response.js";
 
 export async function apiRoutes(fastify: FastifyInstance) {
   const apiRoutePath = `${fastify.config.apiPrefix}/*`;

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { HealthService } from "../services/health.js";
+import { HealthService } from "@/modules/monitoring/services/health.js";
 
 export async function healthRoutes(fastify: FastifyInstance) {
   const healthService = new HealthService(fastify);
@@ -66,7 +66,7 @@ export async function healthManagementRoutes(fastify: FastifyInstance) {
     return {
       ...status,
       metrics: {
-        ...status.metrics,
+        ...(status as any).metrics,
         prometheus: await fastify.metrics?.getMetrics(),
       },
     };

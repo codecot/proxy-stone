@@ -1,13 +1,13 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { theme } from './theme';
-import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
-import CacheManagement from './pages/CacheManagement';
-import BackendMonitoring from './pages/BackendMonitoring';
-import ProxyConfig from './pages/ProxyConfig';
-import BackendConfig from './pages/BackendConfig';
+import { theme } from '@/theme';
+import Layout from '@/components/Layout';
+import Dashboard from '@/pages/Dashboard';
+import CacheManagement from '@/pages/CacheManagement';
+import BackendMonitoring from '@/pages/BackendMonitoring';
+import ProxyConfig from '@/pages/ProxyConfig';
+import BackendConfig from '@/pages/BackendConfig';
 
 const queryClient = new QueryClient();
 

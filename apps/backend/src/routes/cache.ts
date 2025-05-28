@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { SnapshotFilters } from '../services/snapshot-manager.js';
-import { forwardRequest } from '../utils/http-client.js';
-import { processRequest } from '../utils/request.js';
-import { createErrorResponse } from '../utils/response.js';
-import { requireReadAccess, requireAdmin } from '../plugins/auth.js';
+import { forwardRequest } from "@/utils/http-client.js";
+import { processRequest } from "@/utils/request.js";
+import { createErrorResponse } from "@/utils/response.js";
+import { requireReadAccess, requireAdmin } from "@/plugins/auth.js";
 
 interface CacheKeyParams {
   key: string;

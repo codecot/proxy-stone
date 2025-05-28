@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { StorageType } from "../database/types.js";
+import { StorageType } from "@/database/types.js";
 
 export interface LoggedRequest {
   id: string;
@@ -37,12 +37,6 @@ export interface RequestLoggerConfig {
   logFileDateFormat: string;
   logFileDatePattern: string;
   logFileZippedArchive: boolean;
-  logFileMaxSize: number;
-  logFileMaxFiles: number;
-  logFileCompress: boolean;
-  logFileDateFormat: string;
-  logFileDatePattern: string;
-  logFileZippedArchive: boolean;
 }
 
 export class RequestLoggerService {
@@ -63,7 +57,7 @@ export class RequestLoggerService {
     // Initialize storage
     if (this.config.storage.type === StorageType.SQLITE) {
       // TODO: Initialize SQLite storage
-    } else if (this.config.storage.type === StorageType.FILE) {
+    } else if (this.config.storage.type === StorageType.LOCAL_FILE) {
       // TODO: Initialize file storage
     }
   }

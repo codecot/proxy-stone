@@ -8,9 +8,9 @@ import {
   SnapshotRepository,
   SnapshotData,
   SnapshotStats as RepoSnapshotStats,
-} from "../database/index.js";
+} from "@/database/index.js";
 import type { FastifyInstance } from "fastify";
-import { DatabaseError } from "../types/errors.js";
+import { DatabaseError } from "@/types/errors.js";
 
 export interface SnapshotMetadata {
   id?: number;

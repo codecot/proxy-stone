@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { CacheError, BackendError } from "../../../types/errors.js";
+import { CacheError, BackendError } from "@/types/errors.js";
 
 interface RecoveryStrategy {
   maxRetries: number;

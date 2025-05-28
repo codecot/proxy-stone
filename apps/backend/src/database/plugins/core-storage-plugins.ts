@@ -1,9 +1,9 @@
 import {
   StoragePluginRegistry,
   StoragePlugin,
-} from "../storage-plugin-registry.js";
-import { StorageType, StorageAdapter, StorageConfig } from "../types.js";
-import { DatabaseFactory } from "../factory.js";
+} from "@/database/storage-plugin-registry.js";
+import { StorageType, StorageAdapter, StorageConfig } from "@/database/types.js";
+import { DatabaseFactory } from "@/database/factory.js";
 
 // SQL Storage Adapter Wrapper
 class SQLStorageAdapterWrapper<T> implements StorageAdapter<T> {

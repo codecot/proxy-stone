@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { DatabaseAdapter, DatabaseDialect } from "../types.js";
-import { SQLGenerator } from "../sql-generator.js";
+import { DatabaseAdapter, DatabaseDialect } from "@/database/types.js";
+import { SQLGenerator } from "@/database/sql-generator.js";
 
 export interface SnapshotRecord {
   id: string;

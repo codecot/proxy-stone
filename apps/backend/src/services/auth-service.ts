@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { Role, User, ApiKey, AuthSession } from '../types/index.js';
+import { Role, User, ApiKey, AuthSession } from "@/types/index.js";
 
 export class AuthService {
   private loginAttempts: Map<string, { count: number; lastAttempt: number }> = new Map();
