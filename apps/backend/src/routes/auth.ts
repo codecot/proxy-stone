@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { requireAdmin, requireReadAccess } from '../plugins/auth.js';
-import { Role } from '../types/index.js';
+import { requireAdmin, requireReadAccess } from "@/plugins/auth.js";
+import { Role } from "@/types/index.js";
 
 interface LoginRequest {
   username: string;
@@ -21,85 +21,101 @@ interface CreateApiKeyRequest {
 
 export async function authRoutes(fastify: FastifyInstance) {
   // GET /auth/status - Check authentication status (no auth required)
-  fastify.get('/auth/status', async (request, reply) => {
+  fastify.get("/auth/status", async (request, reply) => {
     const authConfig = fastify.config.auth;
 
     return {
-      auth_enabled: authConfig?.enabled || false,
-      user_auth_enabled: authConfig?.enableUserAuth || false,
-      authenticated: request.auth?.authenticated || false,
-      role: request.auth?.role || Role.USER,
+      auth_enabled: authConfig?.enabled ?? false,
+      user_auth_enabled: authConfig?.enableUserAuth ?? false,
+      authenticated: request.auth?.authenticated ?? false,
+      role: request.auth?.role ?? Role.USER,
       user_id: request.auth?.sessionId,
-      protected_paths: authConfig?.protectedPaths || [],
+      protected_paths: authConfig?.protectedPaths ?? [],
       jwt_enabled: !!authConfig?.jwt,
     };
   });
 
   // POST /auth/login - Login with username/password
-  fastify.post<{ Body: LoginRequest }>('/auth/login', async (request, reply) => {
-    const authConfig = fastify.config.auth;
-    const authService = (fastify as any).authService;
+  fastify.post<{ Body: LoginRequest }>(
+    "/auth/login",
+    async (request, reply) => {
+      const authConfig = fastify.config.auth;
+      const authService = (fastify as any).authService;
 
-    if (!authConfig?.enabled || !authConfig.enableUserAuth) {
-      reply.status(503);
-      return { error: 'User authentication not enabled' };
-    }
-
-    const { username, password } = request.body;
-
-    if (!username || !password) {
-      reply.status(400);
-      return { error: 'Username and password required' };
-    }
-
-    try {
-      const result = authService.authenticateUser(username, password, authConfig.users, request.ip);
-
-      if (!result) {
-        reply.status(401);
-        return { error: 'Invalid credentials' };
+      if (!authConfig?.enabled || !authConfig.enableUserAuth) {
+        reply.status(503);
+        return { error: "User authentication not enabled" };
       }
 
-      return {
-        message: 'Login successful',
-        access_token: result.token,
-        token_type: 'Bearer',
-        user: {
-          id: result.user.id,
-          username: result.user.username,
-          role: result.user.role,
-        },
-      };
-    } catch (error) {
-      reply.status(429); // Too Many Requests
-      return {
-        error: error instanceof Error ? error.message : 'Authentication failed',
-        retry_after: Math.ceil(authConfig.lockoutDuration / 60) + ' minutes',
-      };
+      const body = request.body as LoginRequest;
+      const username = body.username ?? "";
+      const password = body.password ?? "";
+
+      if (!username || !password) {
+        reply.status(400);
+        return { error: "Username and password required" };
+      }
+
+      try {
+        const result = authService.authenticateUser(
+          username,
+          password,
+          authConfig.users,
+          request.ip
+        );
+
+        if (!result) {
+          reply.status(401);
+          return { error: "Invalid credentials" };
+        }
+
+        const user = result.user as {
+          id: string;
+          username: string;
+          role: Role;
+        };
+        return {
+          message: "Login successful",
+          access_token: result.token,
+          token_type: "Bearer",
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+          },
+        };
+      } catch (error) {
+        reply.status(429); // Too Many Requests
+        return {
+          error:
+            error instanceof Error ? error.message : "Authentication failed",
+          retry_after: `${Math.ceil(authConfig.lockoutDuration / 60)} minutes`,
+        };
+      }
     }
-  });
+  );
 
   // POST /auth/logout - Logout and revoke token
-  fastify.post('/auth/logout', async (request, reply) => {
+  fastify.post("/auth/logout", async (request, reply) => {
     const authService = (fastify as any).authService;
     const token =
-      request.headers.authorization?.replace('Bearer ', '') ||
-      (request.headers['x-access-token'] as string);
+      request.headers.authorization?.replace("Bearer ", "") ??
+      (request.headers["x-access-token"] as string);
 
     if (token) {
       authService.revokeToken(token);
     }
 
-    return { message: 'Logged out successfully' };
+    return { message: "Logged out successfully" };
   });
 
   // GET /auth/test-protected - Test endpoint that requires read access
   fastify.get(
-    '/auth/test-protected',
+    "/auth/test-protected",
     { preHandler: requireReadAccess() },
     async (request, reply) => {
       return {
-        message: 'Access granted! You have read permissions.',
+        message: "Access granted! You have read permissions.",
         auth: request.auth,
         timestamp: new Date().toISOString(),
       };
@@ -107,17 +123,21 @@ export async function authRoutes(fastify: FastifyInstance) {
   );
 
   // GET /auth/test-admin - Test endpoint that requires admin access
-  fastify.get('/auth/test-admin', { preHandler: requireAdmin() }, async (request, reply) => {
-    return {
-      message: 'Access granted! You have admin permissions.',
-      auth: request.auth,
-      timestamp: new Date().toISOString(),
-    };
-  });
+  fastify.get(
+    "/auth/test-admin",
+    { preHandler: requireAdmin() },
+    async (request, reply) => {
+      return {
+        message: "Access granted! You have admin permissions.",
+        auth: request.auth,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  );
 
   // POST /auth/users - Create new user (admin only)
   fastify.post<{ Body: CreateUserRequest }>(
-    '/auth/users',
+    "/auth/users",
     { preHandler: requireAdmin() },
     async (request, reply) => {
       const authService = (fastify as any).authService;
@@ -125,21 +145,23 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       if (!authConfig?.enableUserAuth) {
         reply.status(503);
-        return { error: 'User authentication not enabled' };
+        return { error: "User authentication not enabled" };
       }
 
       const { username, password, role } = request.body;
 
       if (!username || !password || !role) {
         reply.status(400);
-        return { error: 'Username, password, and role required' };
+        return { error: "Username, password, and role required" };
       }
 
       // Check if user already exists
-      const existingUser = authConfig.users.find((u) => u.username === username);
+      const existingUser = authConfig.users.find(
+        (u) => u.username === username
+      );
       if (existingUser) {
         reply.status(409);
-        return { error: 'Username already exists' };
+        return { error: "Username already exists" };
       }
 
       const newUser = authService.createUser(username, password, role);
@@ -148,7 +170,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       authConfig.users.push(newUser);
 
       return {
-        message: 'User created successfully',
+        message: "User created successfully",
         user: {
           id: newUser.id,
           username: newUser.username,
@@ -162,7 +184,7 @@ export async function authRoutes(fastify: FastifyInstance) {
 
   // POST /auth/api-keys - Create new API key (admin only)
   fastify.post<{ Body: CreateApiKeyRequest }>(
-    '/auth/api-keys',
+    "/auth/api-keys",
     { preHandler: requireAdmin() },
     async (request, reply) => {
       const authService = (fastify as any).authService;
@@ -172,16 +194,20 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       if (!name || !role) {
         reply.status(400);
-        return { error: 'Name and role required' };
+        return { error: "Name and role required" };
       }
 
-      const { apiKey, plainKey } = authService.createApiKey(name, role, expiresInDays);
+      const { apiKey, plainKey } = authService.createApiKey(
+        name,
+        role,
+        expiresInDays
+      );
 
       // Add to config (in production, this would be stored in database)
       authConfig!.apiKeys.push(apiKey);
 
       return {
-        message: 'API key created successfully',
+        message: "API key created successfully",
         api_key: plainKey, // Only shown once!
         key_info: {
           id: apiKey.id,
@@ -190,34 +216,38 @@ export async function authRoutes(fastify: FastifyInstance) {
           expiresAt: apiKey.expiresAt,
           createdAt: apiKey.createdAt,
         },
-        warning: 'Save this API key now. It will not be shown again.',
+        warning: "Save this API key now. It will not be shown again.",
       };
     }
   );
 
   // GET /auth/api-keys - List API keys (admin only, without exposing actual keys)
-  fastify.get('/auth/api-keys', { preHandler: requireAdmin() }, async (request, reply) => {
-    const authConfig = fastify.config.auth;
+  fastify.get(
+    "/auth/api-keys",
+    { preHandler: requireAdmin() },
+    async (request, reply) => {
+      const authConfig = fastify.config.auth;
 
-    if (!authConfig?.enabled) {
-      reply.status(503);
-      return { error: 'Authentication not enabled' };
+      if (!authConfig?.enabled) {
+        reply.status(503);
+        return { error: "Authentication not enabled" };
+      }
+
+      return {
+        keys: authConfig.apiKeys.map((key) => ({
+          id: key.id,
+          name: key.name || "Unnamed",
+          role: key.role,
+          enabled: key.enabled !== false,
+          createdAt: key.createdAt,
+          lastUsed: key.lastUsed,
+          expiresAt: key.expiresAt,
+          key_preview: `${key.keyHash.substring(0, 8)}...`,
+        })),
+        total: authConfig.apiKeys.length,
+      };
     }
-
-    return {
-      keys: authConfig.apiKeys.map((key) => ({
-        id: key.id,
-        name: key.name || 'Unnamed',
-        role: key.role,
-        enabled: key.enabled !== false,
-        createdAt: key.createdAt,
-        lastUsed: key.lastUsed,
-        expiresAt: key.expiresAt,
-        key_preview: key.keyHash.substring(0, 8) + '...',
-      })),
-      total: authConfig.apiKeys.length,
-    };
-  });
+  );
 
   // GET /auth/users - List users (admin only)
   fastify.get('/auth/users', { preHandler: requireAdmin() }, async (request, reply) => {

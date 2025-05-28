@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { Role } from '../types/index.js';
+import { Role } from "@/types/index.js";
 
 // Extend FastifyRequest to include auth context
 declare module 'fastify' {

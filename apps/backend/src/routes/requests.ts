@@ -1,9 +1,9 @@
-import { FastifyInstance, FastifyRequest } from "fastify";
+import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   RequestLoggerService,
   RequestFilters,
-} from "../services/request-logger.js";
-import { createErrorResponse } from "../utils/response.js";
+} from "@/modules/monitoring/services/request-logger.js";
+import { createErrorResponse } from "@/utils/response.js";
 
 interface RequestsQuery {
   method?: string;
@@ -27,7 +27,7 @@ interface ClearQuery {
 async function safeLoggerOperation<T>(
   operation: () => Promise<T>,
   fallback: T,
-  logger: any,
+  logger: FastifyInstance['log'],
   operationName: string
 ): Promise<T> {
   try {
@@ -41,12 +41,11 @@ async function safeLoggerOperation<T>(
 export async function requestRoutes(fastify: FastifyInstance) {
   // Get the request logger service from app context
   const getRequestLogger = (): RequestLoggerService => {
-    // Type assertion since we'll add this to the app context
-    return (fastify as any).requestLogger as RequestLoggerService;
+    return fastify.requestLogger;
   };
 
   // Error handler for route-level errors
-  const handleRouteError = (error: unknown, reply: any, operation: string) => {
+  const handleRouteError = (error: unknown, reply: FastifyReply, operation: string) => {
     fastify.log.error(`Request logging route error [${operation}]:`, error);
     reply.status(500);
     return createErrorResponse(error);
@@ -134,7 +133,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
   );
 
   // Get request statistics
-  fastify.get("/requests/stats", async (request, reply) => {
+  fastify.get("/requests/stats", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const logger = getRequestLogger();
       const stats = await safeLoggerOperation(
@@ -234,7 +233,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
   );
 
   // Clear all requests
-  fastify.delete("/requests/all", async (request, reply) => {
+  fastify.delete("/requests/all", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const logger = getRequestLogger();
       const cleared = await safeLoggerOperation(
@@ -254,7 +253,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
   });
 
   // Get recent requests (last 100)
-  fastify.get("/requests/recent", async (request, reply) => {
+  fastify.get("/requests/recent", async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const logger = getRequestLogger();
       const requests = await safeLoggerOperation(
@@ -520,7 +519,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let medianResponseTime = 0;
       let percentile95 = 0;
       let slowestRequests: any[] = [];
-      let backendPerformance: Record<
+      const backendPerformance: Record<
         string,
         { count: number; avgTime: number }
       > = {};
@@ -613,7 +612,7 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let cacheHits: any[] = [];
       let cacheMisses: any[] = [];
       let hitRate = 0;
-      let ttlAnalysis: Record<
+      const ttlAnalysis: Record<
         string,
         { hits: number; misses: number; hitRate: number }
       > = {};
@@ -812,8 +811,8 @@ export async function requestRoutes(fastify: FastifyInstance) {
       let errorRequests: any[] = [];
       let serverErrors: any[] = [];
       let clientErrors: any[] = [];
-      let errorsByStatus: Record<number, number> = {};
-      let errorsByBackend: Record<string, number> = {};
+      const errorsByStatus: Record<number, number> = {};
+      const errorsByBackend: Record<string, number> = {};
       let topErrorEndpoints: any[] = [];
       let recentErrors: any[] = [];
 

@@ -2,8 +2,8 @@ import sqlite3 from 'sqlite3';
 import { promisify } from 'util';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '../types.js';
-import { SQLGenerator } from '../sql-generator.js';
+import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '@/database/types.js';
+import { SQLGenerator } from '@/database/sql-generator.js';
 
 export class SQLiteAdapter implements DatabaseAdapter {
   private db: sqlite3.Database | null = null;
@@ -94,8 +94,8 @@ export class SQLiteAdapter implements DatabaseAdapter {
     await this.execute(createSQL);
 
     // Create indexes
-    for (const index of schema.indexes) {
-      const indexSQL = this.sqlGenerator.generateCreateIndex(tableName, index);
+    for (const [_index, indexDef] of schema.indexes.entries()) {
+      const indexSQL = this.sqlGenerator.generateCreateIndex(tableName, indexDef);
       try {
         await this.execute(indexSQL);
       } catch (error) {

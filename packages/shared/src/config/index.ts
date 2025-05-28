@@ -130,68 +130,76 @@ export function mergeWithDefaults(config: Partial<AppConfig>): AppConfig {
 export function loadConfigFromEnv(): Partial<AppConfig> {
   const env = process.env;
 
-  // Use any to avoid TypeScript strict checking for partial config
-  const config: any = {};
+  // Build configuration object with proper typing
+  const config: Record<string, unknown> = {};
 
   // Server configuration
   if (env.PORT || env.HOST) {
-    config.server = {};
-    if (env.PORT) config.server.port = parseInt(env.PORT, 10);
-    if (env.HOST) config.server.host = env.HOST;
+    const serverConfig: Partial<ServerConfig> = {};
+    if (env.PORT) serverConfig.port = parseInt(env.PORT, 10);
+    if (env.HOST) serverConfig.host = env.HOST;
+    config.server = serverConfig;
   }
 
   // Proxy configuration
   if (env.PROXY_TARGET) {
-    config.proxy = { target: env.PROXY_TARGET };
-    if (env.PROXY_TIMEOUT)
-      config.proxy.timeout = parseInt(env.PROXY_TIMEOUT, 10);
-    if (env.PROXY_RETRIES)
-      config.proxy.retries = parseInt(env.PROXY_RETRIES, 10);
+    const proxyConfig: Record<string, unknown> = { target: env.PROXY_TARGET };
+    if (env.PROXY_TIMEOUT) {
+      proxyConfig.timeout = parseInt(env.PROXY_TIMEOUT, 10);
+    }
+    if (env.PROXY_RETRIES) {
+      proxyConfig.retries = parseInt(env.PROXY_RETRIES, 10);
+    }
+    config.proxy = proxyConfig;
   }
 
   // Database configuration
-  config.database = {
-    type: (env.DB_TYPE as "sqlite" | "mysql" | "postgresql") || "sqlite",
-    database: env.DB_NAME || env.DB_DATABASE || "proxy_stone",
+  const databaseConfig: Partial<DatabaseConfig> = {
+    type: (env.DB_TYPE as "sqlite" | "mysql" | "postgresql") ?? "sqlite",
+    database: env.DB_NAME ?? env.DB_DATABASE ?? "proxy_stone",
   };
-  if (env.DB_HOST) config.database.host = env.DB_HOST;
-  if (env.DB_PORT) config.database.port = parseInt(env.DB_PORT, 10);
-  if (env.DB_USER || env.DB_USERNAME)
-    config.database.username = env.DB_USER || env.DB_USERNAME;
-  if (env.DB_PASS || env.DB_PASSWORD)
-    config.database.password = env.DB_PASS || env.DB_PASSWORD;
-  if (env.DB_FILENAME) config.database.filename = env.DB_FILENAME;
+  if (env.DB_HOST) databaseConfig.host = env.DB_HOST;
+  if (env.DB_PORT) databaseConfig.port = parseInt(env.DB_PORT, 10);
+  if (env.DB_USER ?? env.DB_USERNAME) {
+    databaseConfig.username = env.DB_USER ?? env.DB_USERNAME;
+  }
+  if (env.DB_PASS ?? env.DB_PASSWORD) {
+    databaseConfig.password = env.DB_PASS ?? env.DB_PASSWORD;
+  }
+  if (env.DB_FILENAME) databaseConfig.filename = env.DB_FILENAME;
+  config.database = databaseConfig;
 
   // Redis configuration
   if (env.REDIS_HOST) {
-    config.redis = {
+    const redisConfig: Partial<RedisConfig> = {
       host: env.REDIS_HOST,
       port: env.REDIS_PORT ? parseInt(env.REDIS_PORT, 10) : 6379,
     };
-    if (env.REDIS_PASSWORD) config.redis.password = env.REDIS_PASSWORD;
-    if (env.REDIS_DB) config.redis.db = parseInt(env.REDIS_DB, 10);
+    if (env.REDIS_PASSWORD) redisConfig.password = env.REDIS_PASSWORD;
+    if (env.REDIS_DB) redisConfig.db = parseInt(env.REDIS_DB, 10);
+    config.redis = redisConfig;
   }
 
   // Cache configuration
   if (env.CACHE_ENABLED !== undefined || env.CACHE_TTL) {
-    config.cache = {
+    const cacheConfig: Record<string, unknown> = {
       enabled: env.CACHE_ENABLED !== "false",
     };
-    if (env.CACHE_TTL) config.cache.ttl = parseInt(env.CACHE_TTL, 10);
+    if (env.CACHE_TTL) cacheConfig.ttl = parseInt(env.CACHE_TTL, 10);
+    config.cache = cacheConfig;
   }
 
   // Logging configuration
   if (env.LOG_LEVEL || env.LOG_FORMAT || env.LOG_FILE) {
-    config.logging = {};
-    if (env.LOG_LEVEL)
-      config.logging.level = env.LOG_LEVEL as
-        | "debug"
-        | "info"
-        | "warn"
-        | "error";
-    if (env.LOG_FORMAT)
-      config.logging.format = env.LOG_FORMAT as "json" | "pretty";
-    if (env.LOG_FILE) config.logging.file = env.LOG_FILE;
+    const loggingConfig: Record<string, unknown> = {};
+    if (env.LOG_LEVEL) {
+      loggingConfig.level = env.LOG_LEVEL as "debug" | "info" | "warn" | "error";
+    }
+    if (env.LOG_FORMAT) {
+      loggingConfig.format = env.LOG_FORMAT as "json" | "pretty";
+    }
+    if (env.LOG_FILE) loggingConfig.file = env.LOG_FILE;
+    config.logging = loggingConfig;
   }
 
   return config as Partial<AppConfig>;

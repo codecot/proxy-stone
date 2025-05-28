@@ -15,7 +15,7 @@ export class SQLiteAdapter implements DatabaseInterface {
 
   async connect(): Promise<void> {
     try {
-      const dbPath = this.config.filename || "./data/proxy-stone.db";
+      const dbPath = this.config.filename ?? "./data/proxy-stone.db";
       this.db = new Database(dbPath);
 
       // Enable WAL mode for better concurrency
@@ -40,17 +40,18 @@ export class SQLiteAdapter implements DatabaseInterface {
   }
 
   isConnected(): boolean {
-    return this.db !== null && this.db.open;
+    return this.db?.open ?? false;
   }
 
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
     if (!this.db) {
       throw new Error("Database not connected");
     }
 
     try {
       const stmt = this.db.prepare(sql);
-      const result = stmt.all(params) as T[];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = stmt.all(params as any[]) as T[];
       return result;
     } catch (error) {
       this.logger.error("SQLite query failed", { sql, params, error });
@@ -58,14 +59,15 @@ export class SQLiteAdapter implements DatabaseInterface {
     }
   }
 
-  async execute(sql: string, params: any[] = []): Promise<void> {
+  async execute(sql: string, params: unknown[] = []): Promise<void> {
     if (!this.db) {
       throw new Error("Database not connected");
     }
 
     try {
       const stmt = this.db.prepare(sql);
-      stmt.run(params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stmt.run(params as any[]);
     } catch (error) {
       this.logger.error("SQLite execute failed", { sql, params, error });
       throw error;

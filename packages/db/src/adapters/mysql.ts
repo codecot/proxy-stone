@@ -16,8 +16,8 @@ export class MySQLAdapter implements DatabaseInterface {
   async connect(): Promise<void> {
     try {
       this.connection = await mysql.createConnection({
-        host: this.config.host || "localhost",
-        port: this.config.port || 3306,
+        host: this.config.host ?? "localhost",
+        port: this.config.port ?? 3306,
         user: this.config.username,
         password: this.config.password,
         database: this.config.database,
@@ -47,13 +47,14 @@ export class MySQLAdapter implements DatabaseInterface {
     return this.connection !== null;
   }
 
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
     if (!this.connection) {
       throw new Error("Database not connected");
     }
 
     try {
-      const [rows] = await this.connection.execute(sql, params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [rows] = await this.connection.execute(sql, params as any[]);
       return rows as T[];
     } catch (error) {
       this.logger.error("MySQL query failed", { sql, params, error });
@@ -61,13 +62,14 @@ export class MySQLAdapter implements DatabaseInterface {
     }
   }
 
-  async execute(sql: string, params: any[] = []): Promise<void> {
+  async execute(sql: string, params: unknown[] = []): Promise<void> {
     if (!this.connection) {
       throw new Error("Database not connected");
     }
 
     try {
-      await this.connection.execute(sql, params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await this.connection.execute(sql, params as any[]);
     } catch (error) {
       this.logger.error("MySQL execute failed", { sql, params, error });
       throw error;

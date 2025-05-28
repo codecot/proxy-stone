@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { SnapshotFilters } from '../services/snapshot-manager.js';
-import { forwardRequest } from '../utils/http-client.js';
-import { processRequest } from '../utils/request.js';
-import { createErrorResponse } from '../utils/response.js';
-import { requireReadAccess, requireAdmin } from '../plugins/auth.js';
+import { forwardRequest } from "@/utils/http-client.js";
+import { processRequest } from "@/utils/request.js";
+import { createErrorResponse } from "@/utils/response.js";
+import { requireReadAccess, requireAdmin } from "@/plugins/auth.js";
 
 interface CacheKeyParams {
   key: string;
@@ -57,7 +57,7 @@ interface FreezeToggleBody {
 
 // Global freeze mode state (in production, this would be stored in database/Redis)
 let globalFreezeMode = false;
-let frozenEndpoints: Set<string> = new Set();
+const frozenEndpoints: Set<string> = new Set();
 
 export async function cacheRoutes(fastify: FastifyInstance) {
   const getSnapshotManager = () => (fastify as any).snapshotManager;

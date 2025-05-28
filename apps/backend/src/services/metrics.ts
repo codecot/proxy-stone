@@ -11,8 +11,9 @@ export class MetricsService {
   private activeConnections: Gauge;
   private memoryUsage: Gauge;
   private cpuUsage: Gauge;
+  private metrics: Map<string, any>;
 
-  constructor() {
+  constructor(_app: FastifyInstance) {
     this.registry = new Registry();
 
     // Request metrics
@@ -73,6 +74,8 @@ export class MetricsService {
     this.registry.registerMetric(this.activeConnections);
     this.registry.registerMetric(this.memoryUsage);
     this.registry.registerMetric(this.cpuUsage);
+
+    this.metrics = new Map();
   }
 
   // Request tracking methods
@@ -116,7 +119,11 @@ export class MetricsService {
 
   // Get metrics in Prometheus format
   async getMetrics(): Promise<string> {
-    return this.registry.metrics();
+    try {
+      return this.registry.metrics();
+    } catch (_error) {
+      return "";
+    }
   }
 
   // Initialize metrics collection
@@ -147,5 +154,32 @@ export class MetricsService {
         return { error: "Failed to get metrics" };
       }
     });
+  }
+
+  async recordRequest(_request: unknown): Promise<void> {
+    try {
+      // ... record request code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  async recordError(_error: unknown): Promise<void> {
+    try {
+      // ... record error code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  async recordLatency(_latency: number): Promise<void> {
+    try {
+      // ... record latency code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
   }
 }

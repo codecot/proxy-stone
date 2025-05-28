@@ -3,15 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch src/index.ts --port 4000 --host 127.0.0.1 --enable-file-cache",
+    "dev": "NODE_ENV=development tsx --tsconfig ./tsconfig.json watch src/index.ts --port 4000 --host 127.0.0.1 --enable-file-cache",
     "build": "tsc",
     "start": "NODE_ENV=production node dist/index.js --port 8000",
-    "lint": "eslint . --ext .ts",
-    "lint:fix": "eslint . --ext .ts --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "echo \"Tests not implemented yet\" && exit 0"
+    "test": "echo \"Tests not implemented yet\" && exit 0",
+    "update-imports": "node update-imports.js"
   },
   "keywords": [
     "proxy",
@@ -51,6 +52,7 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "@eslint/js": "^9.9.0",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.15.2",
     "@typescript-eslint/eslint-plugin": "^8.2.0",
@@ -58,9 +60,13 @@
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-prettier": "^5.2.1",
+    "glob": "^10.3.10",
+    "globals": "^15.9.0",
     "pino-pretty": "^11.2.2",
     "prettier": "^3.3.3",
+    "tsconfig-paths": "^4.2.0",
     "tsx": "^4.16.2",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.2.0"
   }
 }

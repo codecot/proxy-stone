@@ -28,8 +28,8 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Editor from '@monaco-editor/react';
-import { apiService } from '../services/api';
-import type { CacheEntry, CacheRule } from '../services/api';
+import { apiService } from '@/services/api';
+import type { CacheEntry, CacheRule } from '@/services/api';
 
 interface ExtendedCacheEntry extends CacheEntry {
   method?: string;

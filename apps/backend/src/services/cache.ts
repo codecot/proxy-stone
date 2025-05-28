@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import { FileCacheService, FileCacheEntry } from './file-cache.js';
-import { CacheConfig, CacheRule } from '../types/index.js';
+import { CacheConfig, CacheRule } from "@/types/index.js";
 import { minimatch } from 'minimatch';
 import type { FastifyInstance } from 'fastify';
-import { CacheError } from '../types/errors.js';
+import { CacheError } from "@/types/errors.js";
 
 // Redis integration (conditional import)
 let Redis: any = null;
@@ -325,8 +325,11 @@ export class CacheService {
       const duration = Date.now() - startTime;
       console.log(
         `Cache warmup completed in ${duration}ms: ` +
-          `${loadedCount} entries loaded into memory` +
-          (redisLoadedCount > 0 ? `, ${redisLoadedCount} entries loaded into Redis` : '')
+          `${loadedCount} entries loaded into memory${
+            redisLoadedCount > 0
+              ? `, ${redisLoadedCount} entries loaded into Redis`
+              : ""
+          }`
       );
 
       // Update statistics
@@ -473,7 +476,7 @@ export class CacheService {
   ): number {
     const rule = this.findMatchingRule(method, url, headers, status);
 
-    if (rule && rule.ttl !== undefined) {
+    if (rule?.ttl !== undefined) {
       return rule.ttl;
     }
 

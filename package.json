@@ -1,58 +1,59 @@
 {
-  "name": "proxy-stone",
-  "version": "1.0.0",
-  "description": "A high-performance HTTP proxy with caching, monitoring, and admin UI",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "lint": "turbo run lint",
-    "type-check": "turbo run type-check",
-    "clean": "turbo run clean",
-    "docker:launcher": "cd docker && ./scripts/launcher.sh",
-    "docker:dev-backend": "cd docker && ./scripts/dev-backend.sh",
-    "docker:dev-ui": "cd docker && ./scripts/dev-ui.sh",
-    "docker:dev-full": "cd docker && ./scripts/dev-full.sh",
-    "docker:sqlite": "cd docker && ./scripts/dev-full.sh --sqlite",
-    "docker:mysql": "cd docker && ./scripts/dev-full.sh --mysql",
-    "docker:postgresql": "cd docker && ./scripts/dev-full.sh --postgres",
-    "docker:stop": "cd docker && docker compose down",
-    "docker:clean": "cd docker && docker compose down -v",
-    "docker:status": "cd docker && docker compose ps"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0",
-    "turbo": "^1.10.0",
-    "typescript": "^5.0.0",
-    "prettier": "^3.0.0",
-    "eslint": "^8.0.0"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/codecot/proxy-stone.git"
-  },
-  "keywords": [
-    "proxy",
-    "http",
-    "cache",
-    "monitoring",
-    "fastify",
-    "react",
-    "redis",
-    "docker"
-  ],
-  "author": {
-    "name": "Volodymyr Pasichnyk",
-    "email": "vladimir.pasechnik@gmail.com"
-  },
-  "license": "MIT"
+	"name": "proxy-stone",
+	"version": "1.0.0",
+	"description": "A high-performance HTTP proxy with caching, monitoring, and admin UI",
+	"private": true,
+	"packageManager": "npm@10.0.0",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "turbo run dev",
+		"build": "turbo run build",
+		"test": "turbo run test",
+		"lint": "turbo run lint",
+		"type-check": "turbo run type-check",
+		"clean": "turbo run clean",
+		"docker:launcher": "cd docker && ./scripts/launcher.sh",
+		"docker:dev-backend": "cd docker && ./scripts/dev-backend.sh",
+		"docker:dev-ui": "cd docker && ./scripts/dev-ui.sh",
+		"docker:dev-full": "cd docker && ./scripts/dev-full.sh",
+		"docker:sqlite": "cd docker && ./scripts/dev-full.sh --sqlite",
+		"docker:mysql": "cd docker && ./scripts/dev-full.sh --mysql",
+		"docker:postgresql": "cd docker && ./scripts/dev-full.sh --postgres",
+		"docker:stop": "cd docker && docker compose down",
+		"docker:clean": "cd docker && docker compose down -v",
+		"docker:status": "cd docker && docker compose ps"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.21",
+		"turbo": "^2.5.3",
+		"typescript": "^5.8.3",
+		"prettier": "^3.5.3",
+		"eslint": "^9.27.0"
+	},
+	"engines": {
+		"node": ">=18.0.0",
+		"npm": ">=9.0.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/codecot/proxy-stone.git"
+	},
+	"keywords": [
+		"proxy",
+		"http",
+		"cache",
+		"monitoring",
+		"fastify",
+		"react",
+		"redis",
+		"docker"
+	],
+	"author": {
+		"name": "Volodymyr Pasichnyk",
+		"email": "vladimir.pasechnik@gmail.com"
+	},
+	"license": "MIT"
 }

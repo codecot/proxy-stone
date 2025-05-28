@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
-import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '../types.js';
-import { SQLGenerator } from '../sql-generator.js';
+import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '@/database/types.js';
+import { SQLGenerator } from '@/database/sql-generator.js';
 
 export class MySQLAdapter implements DatabaseAdapter {
   private pool: mysql.Pool | null = null;
@@ -103,8 +103,8 @@ export class MySQLAdapter implements DatabaseAdapter {
     await this.execute(createSQL);
 
     // Create indexes
-    for (const index of schema.indexes) {
-      const indexSQL = this.sqlGenerator.generateCreateIndex(tableName, index);
+    for (const [_index, indexDef] of schema.indexes.entries()) {
+      const indexSQL = this.sqlGenerator.generateCreateIndex(tableName, indexDef);
       try {
         await this.execute(indexSQL);
       } catch (error) {

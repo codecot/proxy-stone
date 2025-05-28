@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from 'pg';
-import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '../types.js';
-import { SQLGenerator } from '../sql-generator.js';
+import { DatabaseAdapter, DatabaseConfig, DatabaseDialect, TableSchema } from '@/database/types.js';
+import { SQLGenerator } from '@/database/sql-generator.js';
 
 export class PostgreSQLAdapter implements DatabaseAdapter {
   private pool: Pool | null = null;
@@ -145,7 +145,7 @@ export class PostgreSQLAdapter implements DatabaseAdapter {
     size: number;
     indexes: number;
   }> {
-    const [statsResult] = await this.query(
+    const [_statsResult] = await this.query(
       `SELECT 
          schemaname,
          tablename,

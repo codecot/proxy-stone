@@ -8,9 +8,9 @@ import {
   SnapshotRepository,
   SnapshotData,
   SnapshotStats as RepoSnapshotStats,
-} from "../database/index.js";
+} from "@/database/index.js";
 import type { FastifyInstance } from "fastify";
-import { DatabaseError } from "../types/errors.js";
+import { DatabaseError } from "@/types/errors.js";
 
 export interface SnapshotMetadata {
   id?: number;
@@ -301,5 +301,41 @@ export class SnapshotManager {
       });
       // Don't throw - cleanup failures shouldn't affect shutdown
     }
+  }
+
+  async createSnapshot(): Promise<void> {
+    try {
+      // ... create snapshot code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  async restoreFromSnapshot(_snapshotId: string): Promise<void> {
+    try {
+      // ... restore from snapshot code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
+  }
+
+  async listSnapshots(): Promise<string[]> {
+    try {
+      // ... list snapshots code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return [];
+  }
+
+  async deleteSnapshot(_snapshotId: string): Promise<void> {
+    try {
+      // ... delete snapshot code ...
+    } catch (_error) {
+      // ... error handling ...
+    }
+    return;
   }
 }

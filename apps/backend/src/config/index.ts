@@ -3,15 +3,14 @@ import {
   CacheConfig,
   CacheRule,
   AuthConfig,
-  Role,
   ApiKey,
-} from "../types/index.js";
+} from "@/types/index.js";
 import {
   DatabaseConfig,
   DatabaseDialect,
   DatabaseFactory,
   StorageConfig,
-} from "../database/index.js";
+} from "@/database/index.js";
 
 // Helper function to parse command line arguments (gets the LAST occurrence to allow overriding)
 const getArgValue = (argName: string): string | undefined => {
@@ -373,7 +372,7 @@ export const config: ServerConfig = {
   apiPrefix: cliApiPrefix || process.env.API_PREFIX || "/proxy",
   targetUrl: cliTargetUrl || process.env.TARGET_URL || "https://httpbin.org",
   cacheTTL: defaultTTL, // Legacy support
-  cacheableMethods: cacheableMethods, // Legacy support
+  cacheableMethods, // Legacy support
   // Advanced cache configuration
   cache: {
     ...createDefaultCacheConfig(defaultTTL, cacheableMethods, customRules),
