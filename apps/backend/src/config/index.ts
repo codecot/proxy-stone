@@ -18,7 +18,7 @@ const getArgValue = (argName: string): string | undefined => {
   let lastValue: string | undefined = undefined;
 
   for (let i = 0; i < process.argv.length - 1; i++) {
-    if (process.argv[i] === argName_ && !process.argv[i + 1].startsWith("--")) {
+    if (process.argv[i] === argName_ && process.argv[i + 1] && !process.argv[i + 1].startsWith("--")) {
       lastValue = process.argv[i + 1];
     }
   }
