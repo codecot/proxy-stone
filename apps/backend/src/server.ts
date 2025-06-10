@@ -17,8 +17,7 @@ import {
   healthManagementRoutes,
   metricsRoutes,
 } from "@/modules/monitoring/index.js";
-import { CacheService } from "@/modules/cache/services/cache.js";
-import { cacheRoutes } from "@/modules/cache/index.js";
+import { CacheService } from "@/services/cache.js";
 import { AuthService, authRoutes } from "@/modules/auth/index.js";
 import {
   RecoveryService,
@@ -26,8 +25,8 @@ import {
   SnapshotManager,
 } from "@/modules/recovery/index.js";
 import { registerCluster } from "@/modules/cluster/index.js";
-import { passwordManagerRoutes } from "@/modules/password-manager/routes/api.js";
 import { requestRoutes } from "@/modules/proxy/routes/requests.js";
+import { cacheRoutes } from "./routes/cache.js";
 
 interface RateLimitContext {
   after: string;
@@ -80,6 +79,14 @@ export async function createServer(): Promise<AppInstance> {
         hashLongKeys: true,
         maxKeyLength: 200,
         includeHeaders: [],
+      },
+      methods: ["GET"],
+      behavior: {
+        warmupEnabled: false,
+        backgroundCleanup: true,
+        cleanupInterval: 600,
+        maxSize: 10000,
+        evictionPolicy: "lru",
       },
     },
     config.fileCacheDir,
@@ -306,12 +313,6 @@ export async function createServer(): Promise<AppInstance> {
   await app.register(healthManagementRoutes, { prefix: "/api" });
   await app.register(metricsRoutes, { prefix: "/api" });
   await app.register(registerCluster, { prefix: "/api" });
-  await app.register(
-    async (fastify) => {
-      await passwordManagerRoutes(fastify, config.database);
-    },
-    { prefix: "/api" }
-  );
 
   // Setup cleanup intervals
   setupCleanupIntervals(

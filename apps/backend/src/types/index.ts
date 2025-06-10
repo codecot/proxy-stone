@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { CacheService } from "@/modules/cache/services/cache.js";
+import { CacheService } from "@/services/cache.js";
 import { RequestLoggerService } from "@/modules/monitoring/services/request-logger.js";
 import { SnapshotManager } from "@/modules/recovery/services/snapshot-manager.js";
 import { MetricsService } from "@/modules/monitoring/services/metrics.js";
@@ -72,12 +72,22 @@ export interface CacheConfig {
   enabled: boolean;
   defaultTTL: number;
   maxSize: number;
+  methods: string[];
   keyOptions: {
     hashLongKeys: boolean;
     maxKeyLength: number;
     includeHeaders: string[];
+    excludeHeaders?: string[];
+    normalizeUrl?: boolean;
   };
   rules: CacheRule[];
+  behavior: {
+    warmupEnabled?: boolean;
+    backgroundCleanup?: boolean;
+    cleanupInterval?: number;
+    maxSize?: number;
+    evictionPolicy?: "lru" | "fifo";
+  };
   redis?: {
     enabled: boolean;
     host: string;
@@ -86,6 +96,9 @@ export interface CacheConfig {
     db?: number;
     tls?: boolean;
     prefix?: string;
+    keyPrefix?: string;
+    connectTimeout?: number;
+    lazyConnect?: boolean;
   };
 }
 

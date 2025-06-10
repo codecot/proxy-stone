@@ -1,4 +1,4 @@
-import { createServer } from "@/server.js";
+import { createServer } from "./server.js";
 
 // Start server
 try {

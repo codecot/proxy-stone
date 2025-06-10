@@ -206,7 +206,10 @@ export class AuthService {
     return {
       id: userId,
       username,
+      password: '', // Empty string for security (plain password not stored)
       passwordHash,
+      permissions: [], // Default empty permissions
+      isActive: true,
       role,
       enabled: true,
       createdAt: new Date().toISOString(),
@@ -229,9 +232,11 @@ export class AuthService {
 
     const apiKey: ApiKey = {
       id: keyId,
+      key: '', // Empty string for security (plain key not stored)
       keyHash,
       role,
       name,
+      permissions: [], // Default empty permissions
       enabled: true,
       createdAt: new Date().toISOString(),
       expiresAt,

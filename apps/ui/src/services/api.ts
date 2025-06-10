@@ -2,9 +2,9 @@ import axios from 'axios';
 import { backendConfigService } from './backendConfig';
 
 // Create axios instance with dynamic base URL
-const api = axios.create({
+export const api = axios.create({
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
@@ -13,8 +13,10 @@ api.interceptors.request.use((config) => {
   const activeBackend = backendConfigService.getActiveBackend();
   if (activeBackend) {
     config.baseURL = `${activeBackend.url}/api`;
+    console.log(`Using API base URL: ${config.baseURL}`);
   } else {
     config.baseURL = 'http://localhost:4000/api'; // fallback
+    console.log(`Using fallback API base URL: ${config.baseURL}`);
   }
   return config;
 });

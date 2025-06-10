@@ -114,6 +114,7 @@ const createDefaultCacheConfig = (
     enabled: true,
     defaultTTL,
     maxSize: 10000,
+    methods: cacheableMethods,
     rules: [
       // Default rules for common patterns (fixed regex patterns)
       {
@@ -146,6 +147,13 @@ const createDefaultCacheConfig = (
       hashLongKeys: true,
       maxKeyLength: 200,
       includeHeaders: ["authorization", "x-user-id", "x-tenant-id"],
+    },
+    behavior: {
+      warmupEnabled: false,
+      backgroundCleanup: true,
+      cleanupInterval: 600,
+      maxSize: 10000,
+      evictionPolicy: "lru",
     },
     redis: {
       enabled: false,
@@ -383,6 +391,14 @@ export const config: ServerConfig = {
           .includeHeaders!,
         ...additionalKeyHeaders,
       ],
+    },
+    behavior: {
+      ...createDefaultCacheConfig(defaultTTL, cacheableMethods).behavior,
+      warmupEnabled:
+        cliEnableCacheWarmup || process.env.ENABLE_CACHE_WARMUP === "true",
+      cleanupInterval:
+        Number(cliCacheCleanupInterval || process.env.CACHE_CLEANUP_INTERVAL) ||
+        600,
     },
     // Redis configuration
     redis: {

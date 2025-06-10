@@ -1,53 +1,9 @@
-# SQLite Database Implementation for Password Manager
+# Database Implementation Summary
 
-## 🎯 **Implementation Complete**
+## Note: Password Manager functionality has been removed from this application.
 
-The password manager has been successfully migrated from in-memory storage to **persistent database storage** with **multi-database support**. Now supports **SQLite**, **MySQL**, and **PostgreSQL**.
-
-## 🚀 **Multi-Database Support**
-
-### **Available Database Types**
-
-✅ **SQLite** - Default, file-based, zero-configuration  
-✅ **MySQL** - High-performance, widely supported  
-✅ **PostgreSQL** - Advanced features, ACID compliance
-
-### **Configuration Options**
-
-The password manager now uses the same database configuration system as the main application, allowing you to choose your preferred database type.
-
-#### **Environment Variables**
-
-```bash
-# SQLite (Default)
-DB_TYPE=sqlite
-DB_PATH=./storage/password-manager.db
-
-# MySQL
-DB_TYPE=mysql
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=proxy_stone
-DB_USER=your_user
-DB_PASSWORD=your_password
-
-# PostgreSQL
-DB_TYPE=postgresql
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=proxy_stone
-DB_USER=your_user
-DB_PASSWORD=your_password
-
-# Connection Pool Settings (MySQL/PostgreSQL)
-DB_POOL_MIN=2
-DB_POOL_MAX=10
-DB_POOL_TIMEOUT=30000
-```
-
-#### **Database Naming Convention**
-
-The password manager automatically creates separate databases/files:
+This document previously contained information about the Password Manager database implementation.
+The Password Manager component has been removed from the application.
 
 - **SQLite**: `password-manager.db` (based on main DB path)
 - **MySQL**: `{main_database}_passwords` (e.g., `proxy_stone_passwords`)

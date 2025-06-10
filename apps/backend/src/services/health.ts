@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { CacheService } from '@/modules/cache/services/cache.js';
+import type { CacheService } from "@/services/cache.js";
 import type { RequestLoggerService } from '@/modules/monitoring/services/request-logger.js';
 import type { SnapshotManager } from '@/modules/recovery/services/snapshot-manager.js';
 import type { MetricsService } from '@/modules/monitoring/services/metrics.js';

@@ -4,15 +4,14 @@
 
 1. [Overview](#overview)
 2. [Authentication](#authentication)
-3. [Password Manager APIs](#password-manager-apis)
-4. [Request Analytics & Monitoring APIs](#request-analytics--monitoring-apis)
-5. [Health & System APIs](#health--system-apis)
-6. [Cache Management APIs](#cache-management-apis)
-7. [Authentication & User Management APIs](#authentication--user-management-apis)
-8. [Proxy & API Management](#proxy--api-management)
-9. [Cluster Management APIs](#cluster-management-apis)
-10. [Error Handling](#error-handling)
-11. [Configuration](#configuration)
+3. [Request Analytics & Monitoring APIs](#request-analytics--monitoring-apis)
+4. [Health & System APIs](#health--system-apis)
+5. [Cache Management APIs](#cache-management-apis)
+6. [Authentication & User Management APIs](#authentication--user-management-apis)
+7. [Proxy & API Management](#proxy--api-management)
+8. [Cluster Management APIs](#cluster-management-apis)
+9. [Error Handling](#error-handling)
+10. [Configuration](#configuration)
 
 ---
 
@@ -20,7 +19,6 @@
 
 Proxy Stone provides a comprehensive API suite for:
 
-- **Password Management** - Secure credential storage with CSV import/export
 - **Request Analytics** - Performance monitoring, cache analytics, error tracking
 - **System Monitoring** - Health checks, metrics, real-time monitoring
 - **Cache Management** - Intelligent caching with TTL and invalidation
@@ -52,173 +50,6 @@ Authorization: Bearer jwt-token
 
 # Content Type (for POST/PUT requests)
 Content-Type: application/json
-```
-
----
-
-## 🔑 **Password Manager APIs**
-
-### **Base Path:** `/api/password-manager`
-
-### **1. Get All Credentials**
-
-```bash
-GET /api/password-manager/credentials
-```
-
-**Query Parameters:**
-
-- `category` - Filter by category
-- `status` - Filter by status (`pending`, `verified`, `changed`)
-- `importance` - Filter by importance (1-5)
-- `search` - Search in login/url fields
-- `limit` - Limit results (default: 100)
-- `offset` - Pagination offset
-
-**Response:**
-
-```json
-{
-  "credentials": [
-    {
-      "id": 1,
-      "login": "admin@example.com",
-      "password": "encrypted_password",
-      "url": "https://api.example.com",
-      "category": "admin",
-      "importance": 5,
-      "status": "verified",
-      "tags": ["production", "critical"],
-      "createdAt": "2025-01-28T10:00:00Z",
-      "updatedAt": "2025-01-28T10:00:00Z"
-    }
-  ],
-  "total": 150,
-  "categories": ["admin", "user", "api", "database"],
-  "statuses": ["pending", "verified", "changed"],
-  "pagination": {
-    "limit": 100,
-    "offset": 0,
-    "hasMore": true
-  }
-}
-```
-
-### **2. Get Single Credential**
-
-```bash
-GET /api/password-manager/credentials/:id
-```
-
-**Response:**
-
-```json
-{
-  "credential": {
-    "id": 1,
-    "login": "admin@example.com",
-    "password": "decrypted_password",
-    "url": "https://api.example.com",
-    "category": "admin",
-    "importance": 5,
-    "status": "verified",
-    "changePasswordUrl": "https://api.example.com/reset",
-    "tags": ["production", "critical"],
-    "createdAt": "2025-01-28T10:00:00Z",
-    "updatedAt": "2025-01-28T10:00:00Z"
-  }
-}
-```
-
-### **3. Create Credential**
-
-```bash
-POST /api/password-manager/credentials
-```
-
-**Request Body:**
-
-```json
-{
-  "login": "user@example.com",
-  "password": "secure_password",
-  "url": "https://api.example.com",
-  "category": "user",
-  "importance": 3,
-  "status": "pending",
-  "changePasswordUrl": "https://api.example.com/reset",
-  "tags": ["development", "testing"]
-}
-```
-
-### **4. Update Credential**
-
-```bash
-PUT /api/password-manager/credentials/:id
-```
-
-**Request Body:** Same as create
-
-### **5. Delete Credential**
-
-```bash
-DELETE /api/password-manager/credentials/:id
-```
-
-### **6. CSV Import**
-
-```bash
-POST /api/password-manager/upload-csv
-```
-
-**Request Body:**
-
-```json
-{
-  "csvContent": "login,password,url,category,importance,status,tags\nuser@example.com,pass123,https://example.com,user,3,pending,\"[\"\"dev\"\", \"\"test\"\"]\""
-}
-```
-
-**Response:**
-
-```json
-{
-  "message": "CSV imported successfully",
-  "imported": 25,
-  "errors": 2,
-  "details": {
-    "successful": 25,
-    "failed": 2,
-    "duplicates": 1
-  }
-}
-```
-
-### **7. CSV Export & Template**
-
-```bash
-# Download CSV template
-GET /api/password-manager/csv-template
-
-# Export all credentials as CSV
-GET /api/password-manager/export-csv
-```
-
-### **8. Bulk Operations**
-
-```bash
-# Bulk status update
-POST /api/password-manager/bulk-update-status
-{
-  "ids": [1, 2, 3],
-  "status": "verified"
-}
-
-# Bulk delete
-POST /api/password-manager/bulk-delete
-{
-  "ids": [1, 2, 3]
-}
 ```
 
 ---

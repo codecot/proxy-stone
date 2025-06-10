@@ -21,7 +21,7 @@ import {
   Monitor as MonitorIcon,
   Settings as SettingsIcon,
   Cloud as BackendIcon,
-} from '@mui/icons-material';
+} from "@mui/icons-material";
 
 const drawerWidth = 240;
 
@@ -30,11 +30,11 @@ interface LayoutProps {
 }
 
 const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Cache Management', icon: <CacheIcon />, path: '/cache' },
-  { text: 'Backend Monitoring', icon: <MonitorIcon />, path: '/monitoring' },
-  { text: 'Backend Configuration', icon: <BackendIcon />, path: '/backends' },
-  { text: 'Proxy Configuration', icon: <SettingsIcon />, path: '/config' },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
+  { text: "Cache Management", icon: <CacheIcon />, path: "/cache" },
+  { text: "Backend Monitoring", icon: <MonitorIcon />, path: "/monitoring" },
+  { text: "Backend Configuration", icon: <BackendIcon />, path: "/backends" },
+  { text: "Proxy Configuration", icon: <SettingsIcon />, path: "/config" },
 ];
 
 export default function Layout({ children }: LayoutProps) {

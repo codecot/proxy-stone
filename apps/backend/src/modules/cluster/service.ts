@@ -32,8 +32,8 @@ export class ClusterService {
   ) {
     this.app = app;
 
-    // Set defaults for required configuration properties
-    const defaults: Required<ClusterConfig> = {
+    // Set defaults for configuration properties
+    const defaults: ClusterConfig = {
       enabled: true,
       clusterId: "default-cluster",
       heartbeatInterval: 30,
@@ -44,8 +44,6 @@ export class ClusterService {
       tags: [],
       defaultCapabilities: {},
       maxNodes: 100,
-      nodeId: undefined,
-      metadata: undefined,
       storage: { type: "memory" },
     };
 
@@ -56,7 +54,7 @@ export class ClusterService {
     };
 
     // Initialize repository if using database storage
-    if (this.config.storage.type === "database" && dbAdapter) {
+    if (this.config.storage?.type === "database" && dbAdapter) {
       this.repository = new ClusterRepository(dbAdapter);
     }
   }
@@ -65,7 +63,7 @@ export class ClusterService {
     this.app.log.info("Initializing cluster service...");
 
     // Initialize storage
-    if (this.config.storage.type === "redis") {
+    if (this.config.storage?.type === "redis") {
       await this.initializeRedis();
     } else if (this.repository) {
       await this.repository.initialize();
@@ -85,7 +83,7 @@ export class ClusterService {
   }
 
   private async initializeRedis(): Promise<void> {
-    if (!this.config.storage.redis) {
+    if (!this.config.storage?.redis) {
       throw new Error(
         "Redis configuration is required when storage type is redis"
       );
@@ -113,15 +111,25 @@ export class ClusterService {
     const nodeId = this.config.nodeId || randomUUID();
     const nodeUrl = `http://${this.app.config.host}:${this.app.config.port}`;
 
+    // Convert NodeCapabilities to Record<string, boolean> for compatibility
+    const capabilities: Record<string, boolean> = {};
+    if (this.config.defaultCapabilities) {
+      Object.entries(this.config.defaultCapabilities).forEach(([key, value]) => {
+        if (value !== undefined) {
+          capabilities[key] = value;
+        }
+      });
+    }
+
     const registrationData: NodeRegistrationRequest = {
       id: nodeId,
       url: nodeUrl,
       clusterId: this.config.clusterId,
       tags: this.config.tags,
-      capabilities: this.config.defaultCapabilities,
+      capabilities,
       role: this.config.defaultRole,
       metadata: {
-        ...this.config.metadata,
+        ...(this.config.metadata || {}),
         autoRegistered: true,
         startedAt: new Date().toISOString(),
         nodeVersion: process.version,
@@ -270,7 +278,7 @@ export class ClusterService {
   async getClusterHealth(): Promise<ClusterHealthResponse> {
     const nodes = await this.getAllNodes();
     const now = new Date();
-    const timeoutMs = this.config.nodeTimeout * 1000;
+    const timeoutMs = (this.config.nodeTimeout || 60) * 1000;
 
     const nodeHealthStatuses: NodeHealthStatus[] = [];
     let activeNodes = 0;
@@ -368,7 +376,7 @@ export class ClusterService {
   }
 
   private startHeartbeat(): void {
-    if (!this.currentNodeId || this.config.heartbeatInterval <= 0) {
+    if (!this.currentNodeId || !this.config.heartbeatInterval || this.config.heartbeatInterval <= 0) {
       return;
     }
 
@@ -392,15 +400,15 @@ export class ClusterService {
       } catch (error) {
         this.app.log.error("Failed to send heartbeat:", error);
       }
-    }, this.config.heartbeatInterval * 1000);
+    }, (this.config.heartbeatInterval || 30) * 1000);
 
     this.app.log.info(
-      `Started heartbeat with interval: ${this.config.heartbeatInterval}s`
+      `Started heartbeat with interval: ${this.config.heartbeatInterval || 30}s`
     );
   }
 
   private startHealthChecks(): void {
-    if (this.config.healthCheckInterval <= 0) {
+    if (!this.config.healthCheckInterval || this.config.healthCheckInterval <= 0) {
       return;
     }
 
@@ -410,10 +418,10 @@ export class ClusterService {
       } catch (error) {
         this.app.log.error("Failed to perform health checks:", error);
       }
-    }, this.config.healthCheckInterval * 1000);
+    }, (this.config.healthCheckInterval || 10) * 1000);
 
     this.app.log.info(
-      `Started health checks with interval: ${this.config.healthCheckInterval}s`
+      `Started health checks with interval: ${this.config.healthCheckInterval || 10}s`
     );
   }
 
@@ -436,7 +444,7 @@ export class ClusterService {
   private async performHealthChecks(): Promise<void> {
     const nodes = await this.getAllNodes();
     const now = new Date();
-    const timeoutMs = this.config.nodeTimeout * 1000;
+    const timeoutMs = (this.config.nodeTimeout || 60) * 1000;
 
     for (const node of nodes) {
       if (node.status === NodeStatus.DISABLED) {
@@ -457,7 +465,7 @@ export class ClusterService {
 
   private async cleanupInactiveNodes(): Promise<void> {
     const now = new Date();
-    const cleanupThresholdMs = this.config.nodeTimeout * 1000 * 10; // 10x timeout period
+    const cleanupThresholdMs = (this.config.nodeTimeout || 60) * 1000 * 10; // 10x timeout period
     const cleanupThreshold = new Date(
       now.getTime() - cleanupThresholdMs
     ).toISOString();
