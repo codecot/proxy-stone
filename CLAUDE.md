@@ -15,6 +15,17 @@
 - **Host**: Configurable via `--host` parameter (default: 0.0.0.0)
 - **Dev Command**: `npm run dev -- --port 3000 --db-type postgresql --db-host localhost --db-port 5434 --db-name proxy_stone --db-user proxy_user --db-password proxy_pass`
 
+## API Endpoint Routing
+- **Direct Endpoints** (no proxy): 
+  - `/health`, `/health/live`, `/health/ready` - Health checks
+  - `/api/metrics` - Prometheus metrics
+  - `/api/cache` - Cache management
+  - `/api/auth` - Authentication
+  - `/api/requests` - Request analytics
+  - `/api/cluster` - Cluster management
+- **Proxy Endpoints**: `/proxy/*` → forwards to target URL (default: https://httpbin.org)
+- **API Prefix**: Configurable via `--api-prefix` (default: `/proxy`)
+
 ## Docker Services
 - **PostgreSQL**: Port 5434, profile `postgres`
 - **pgAdmin**: Port 5051, profile `postgres`  
@@ -38,3 +49,21 @@ cd apps/backend && npm run dev -- --port 3000 --db-type postgresql --db-host loc
 # Check Docker services
 cd docker && docker-compose ps
 ```
+
+## Development Principles
+- Always use descriptive names
+
+## Commit Message Guidelines
+- Start with a verb in imperative mood (e.g., "Add", "Update", "Fix", "Refactor")
+- Use concise, clear language
+- Provide context for the change
+- Separate subject from body with a blank line
+- Use the body to explain "why" and additional details
+- Example: 
+  ```
+  Add user authentication middleware
+
+  - Implement JWT-based authentication
+  - Protect sensitive routes
+  - Enhance security for API endpoints
+  ```
