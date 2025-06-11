@@ -5,21 +5,99 @@ export async function healthRoutes(fastify: FastifyInstance) {
   const healthService = new HealthService(fastify);
 
   // Basic health check - Keep accessible for monitoring systems
-  fastify.get("/health", async (request, reply) => {
+  fastify.get("/health", {
+    schema: {
+      tags: ["health"],
+      summary: "Get system health status",
+      description: "Returns the overall health status of the proxy service and all its components",
+      response: {
+        200: {
+          description: "System is healthy",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ok", "degraded", "unhealthy"] },
+            timestamp: { type: "string", format: "date-time" },
+            uptime: { type: "number" },
+            services: { type: "object" },
+            metrics: { type: "object" },
+            responseTime: { type: "number" },
+          },
+        },
+        503: {
+          description: "System is unhealthy or degraded",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ok", "degraded", "unhealthy"] },
+            timestamp: { type: "string", format: "date-time" },
+            uptime: { type: "number" },
+            services: { type: "object" },
+            metrics: { type: "object" },
+            responseTime: { type: "number" },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
     const status = await healthService.getHealthStatus();
     reply.status(status.status === "ok" ? 200 : 503);
     return status;
   });
 
   // Liveness probe for Kubernetes - Keep accessible for k8s
-  fastify.get("/health/live", async (request, reply) => {
+  fastify.get("/health/live", {
+    schema: {
+      tags: ["health"],
+      summary: "Kubernetes liveness probe",
+      description: "Simple liveness check for Kubernetes orchestration",
+      response: {
+        200: {
+          description: "Service is alive",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ok", "degraded", "unhealthy"] },
+          },
+        },
+        503: {
+          description: "Service is not responding",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ok", "degraded", "unhealthy"] },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
     const status = await healthService.getHealthStatus();
     reply.status(status.status === "ok" ? 200 : 503);
     return { status: status.status };
   });
 
   // Readiness probe for Kubernetes - Keep accessible for k8s
-  fastify.get("/health/ready", async (request, reply) => {
+  fastify.get("/health/ready", {
+    schema: {
+      tags: ["health"],
+      summary: "Kubernetes readiness probe",
+      description: "Checks if the service is ready to receive traffic",
+      response: {
+        200: {
+          description: "Service is ready",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ready", "not ready"] },
+            services: { type: "object" },
+          },
+        },
+        503: {
+          description: "Service is not ready",
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["ready", "not ready"] },
+            services: { type: "object" },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
     const status = await healthService.getHealthStatus();
     const isReady =
       status.status === "ok" &&

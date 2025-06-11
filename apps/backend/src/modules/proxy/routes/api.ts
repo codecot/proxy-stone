@@ -78,6 +78,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
   }
 
   // API route handler for all methods and paths under the configured apiPrefix
+  // NOTE: No schema defined here - proxy endpoints are documented in the dynamic external API docs
   fastify.all(
     apiRoutePath,
     async (

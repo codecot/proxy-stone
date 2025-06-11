@@ -27,6 +27,11 @@ import {
 import { registerCluster } from "@/modules/cluster/index.js";
 import { requestRoutes } from "@/modules/proxy/routes/requests.js";
 import { cacheRoutes } from "./routes/cache.js";
+import { dynamicDocsRoutes } from "./routes/dynamic-docs.js";
+import { docsIndexRoutes } from "./routes/docs-index.js";
+import { landingRoutes } from "./routes/landing.js";
+import { uiIntegrationRoutes } from "./routes/ui-integration.js";
+import { createOpenApiConfig, createSwaggerUiConfig } from "@/config/openapi.js";
 
 interface RateLimitContext {
   after: string;
@@ -304,7 +309,12 @@ export async function createServer(): Promise<AppInstance> {
   await app.register(authPlugin);
   await formBodyPlugin(app);
 
+  // Register OpenAPI/Swagger documentation - will be configured after server starts
+  await app.register(import("@fastify/swagger"), createOpenApiConfig('localhost', 4000)); // Temporary config
+  await app.register(import("@fastify/swagger-ui"), createSwaggerUiConfig('localhost', 4000)); // Temporary config
+
   // Register routes from modules
+  await app.register(landingRoutes); // Landing page at root (no prefix)
   await app.register(healthRoutes); // Basic health endpoints (no prefix)
   await app.register(apiRoutes);
   await app.register(requestRoutes, { prefix: "/api" }); // Request analytics and logging routes
@@ -313,6 +323,9 @@ export async function createServer(): Promise<AppInstance> {
   await app.register(healthManagementRoutes, { prefix: "/api" });
   await app.register(metricsRoutes, { prefix: "/api" });
   await app.register(registerCluster, { prefix: "/api" });
+  await app.register(dynamicDocsRoutes); // No prefix - mount at root level
+  await app.register(docsIndexRoutes); // No prefix - mount at root level
+  await app.register(uiIntegrationRoutes); // UI integration routes
 
   // Setup cleanup intervals
   setupCleanupIntervals(
