@@ -65,6 +65,37 @@ export interface CacheConfig {
   };
 }
 
+export interface ClusterNode {
+  nodeId: string;
+  hostname: string;
+  port: number;
+  status: 'active' | 'inactive' | 'disabled';
+  registeredAt: string;
+  lastSeen: string;
+  version?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ClusterHealth {
+  totalNodes: number;
+  activeNodes: number;
+  inactiveNodes: number;
+  disabledNodes: number;
+  clusterStatus: 'healthy' | 'degraded' | 'critical';
+  lastUpdated: string;
+}
+
+export interface NodeStatus {
+  nodeId: string;
+  status: 'active' | 'inactive' | 'disabled';
+  uptime: number;
+  requestCount: number;
+  errorCount: number;
+  cpuUsage?: number;
+  memoryUsage?: number;
+  lastHeartbeat: string;
+}
+
 export const apiService = {
   // Cache Management
   getCacheEntries: async (filters?: {
@@ -150,6 +181,52 @@ export const apiService = {
 
   getBackendStatus: async () => {
     const response = await api.get('/health/backend');
+    return response.data;
+  },
+
+  // Cluster Management
+  getClusterNodes: async (): Promise<ClusterNode[]> => {
+    const response = await api.get('/cluster/nodes');
+    return response.data;
+  },
+
+  getClusterNode: async (nodeId: string): Promise<ClusterNode> => {
+    const response = await api.get(`/cluster/nodes/${encodeURIComponent(nodeId)}`);
+    return response.data;
+  },
+
+  getClusterHealth: async (): Promise<ClusterHealth> => {
+    const response = await api.get('/cluster/health');
+    return response.data;
+  },
+
+  getClusterStatus: async (): Promise<NodeStatus> => {
+    const response = await api.get('/cluster/status');
+    return response.data;
+  },
+
+  registerClusterNode: async (nodeData: {
+    hostname: string;
+    port: number;
+    version?: string;
+    metadata?: Record<string, unknown>;
+  }) => {
+    const response = await api.post('/cluster/register', nodeData);
+    return response.data;
+  },
+
+  enableClusterNode: async (nodeId: string) => {
+    const response = await api.patch(`/cluster/nodes/${encodeURIComponent(nodeId)}/enable`);
+    return response.data;
+  },
+
+  disableClusterNode: async (nodeId: string) => {
+    const response = await api.patch(`/cluster/nodes/${encodeURIComponent(nodeId)}/disable`);
+    return response.data;
+  },
+
+  removeClusterNode: async (nodeId: string) => {
+    const response = await api.delete(`/cluster/nodes/${encodeURIComponent(nodeId)}`);
     return response.data;
   },
 };

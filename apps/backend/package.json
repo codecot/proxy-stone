@@ -43,6 +43,7 @@
     "@types/sqlite3": "^3.1.11",
     "ajv-formats": "^3.0.1",
     "ajv-keywords": "^5.1.0",
+    "axios": "^1.9.0",
     "dd-trace": "^5.53.0",
     "fastify": "^5.3.2",
     "ioredis": "^5.6.1",

@@ -1,7 +1,9 @@
-import { Box, Typography, Paper, CircularProgress, Chip } from '@mui/material';
+import { Box, Typography, Paper, CircularProgress, Chip, Alert } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/services/api';
+import { proxyAwareApiService } from '@/services/proxyAwareApi';
 import { backendConfigService } from '@/services/backendConfig';
+import { useProxy } from '@/contexts/ProxyContext';
 
 interface BackendStatus {
   host: string;
@@ -11,26 +13,33 @@ interface BackendStatus {
 }
 
 export default function Dashboard() {
-  const { data: healthStatus, isLoading: healthLoading } = useQuery({
-    queryKey: ['healthStatus'],
-    queryFn: apiService.getHealthStatus,
-  });
+  const { selectedProxy, connectionStatus, isCoordinator } = useProxy();
 
-  const { data: backendStatus, isLoading: backendLoading } = useQuery({
-    queryKey: ['backendStatus'],
-    queryFn: apiService.getBackendStatus,
+  // Use proxy-aware API to get data from the selected proxy
+  const { data: healthStatus, isLoading: healthLoading } = useQuery({
+    queryKey: ['proxyHealthStatus', selectedProxy?.id],
+    queryFn: proxyAwareApiService.getHealthStatus,
+    enabled: !!selectedProxy && connectionStatus === 'connected',
   });
 
   const { data: cacheConfig, isLoading: cacheConfigLoading } = useQuery({
-    queryKey: ['cacheConfig'],
-    queryFn: apiService.getCacheConfig,
+    queryKey: ['proxyCacheConfig', selectedProxy?.id],
+    queryFn: proxyAwareApiService.getCacheConfig,
+    enabled: !!selectedProxy && connectionStatus === 'connected',
+  });
+
+  const { data: clusterStatus, isLoading: clusterLoading } = useQuery({
+    queryKey: ['proxyClusterStatus', selectedProxy?.id],
+    queryFn: proxyAwareApiService.getProxyClusterStatus,
+    enabled: !!selectedProxy && connectionStatus === 'connected',
   });
 
   // Get current backend configuration
   const backendConfig = backendConfigService.getConfig();
   const activeBackend = backendConfigService.getActiveBackend();
 
-  if (healthLoading || backendLoading || cacheConfigLoading) {
+  // Show loading state
+  if (healthLoading || cacheConfigLoading || clusterLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <CircularProgress />
@@ -38,20 +47,52 @@ export default function Dashboard() {
     );
   }
 
+  // Show connection status if not connected
+  if (!selectedProxy || connectionStatus !== 'connected') {
+    return (
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          Dashboard
+        </Typography>
+        <Alert severity="warning">
+          {!selectedProxy 
+            ? 'No proxy selected. Click the proxy selector in the header to choose a proxy backend to manage.'
+            : `Not connected to proxy (${connectionStatus}). Please check the proxy status or select a different proxy.`
+          }
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4">
+          Dashboard
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Connected to:
+          </Typography>
+          <Chip 
+            label={selectedProxy.name}
+            color={isCoordinator ? 'primary' : 'secondary'}
+            size="small"
+          />
+          {isCoordinator && (
+            <Chip label="Coordinator" color="primary" size="small" variant="outlined" />
+          )}
+        </Box>
+      </Box>
 
       <Box display="flex" flexDirection="column" gap={3}>
         {/* Top Row */}
         <Box display="flex" gap={3} flexWrap="wrap">
-          {/* System Health */}
+          {/* Proxy Health */}
           <Box flex="1" minWidth="300px">
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
-                System Health
+                Proxy Health
               </Typography>
               <Typography>Status: {healthStatus?.status || 'Unknown'}</Typography>
               <Typography>Version: {healthStatus?.version || 'N/A'}</Typography>
@@ -61,27 +102,23 @@ export default function Dashboard() {
                   ? `${Math.floor(healthStatus.uptime / 3600)}h ${Math.floor((healthStatus.uptime % 3600) / 60)}m`
                   : 'N/A'}
               </Typography>
+              <Typography>URL: {selectedProxy.url}</Typography>
             </Paper>
           </Box>
 
-          {/* Backend Configuration */}
+          {/* Cluster Information */}
           <Box flex="1" minWidth="300px">
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
-                Backend Configuration
+                Cluster Information
               </Typography>
               <Typography>
-                Mode: <Chip label={backendConfig.mode} size="small" />
+                Role: <Chip label={selectedProxy.clusterRole || 'unknown'} size="small" color={isCoordinator ? 'primary' : 'secondary'} />
               </Typography>
-              <Typography>Active Backend: {activeBackend?.name || 'None'}</Typography>
-              <Typography>Total Backends: {backendConfig.backends.length}</Typography>
+              <Typography>Cluster ID: {selectedProxy.clusterId || 'N/A'}</Typography>
+              <Typography>Node ID: {selectedProxy.nodeId?.substring(0, 8) || 'N/A'}...</Typography>
               <Typography>
-                Status:{' '}
-                <Chip
-                  label={activeBackend?.status || 'unknown'}
-                  color={activeBackend?.status === 'online' ? 'success' : 'error'}
-                  size="small"
-                />
+                Service Mode: <Chip label={clusterStatus?.serviceStatus?.mode || 'unknown'} size="small" />
               </Typography>
             </Paper>
           </Box>
@@ -95,24 +132,36 @@ export default function Dashboard() {
               <Typography>Default TTL: {cacheConfig?.defaultTTL || 'N/A'} seconds</Typography>
               <Typography>Methods: {cacheConfig?.methods?.join(', ') || 'N/A'}</Typography>
               <Typography>Rules: {cacheConfig?.rules?.length || 0} active rules</Typography>
+              <Typography>Max Size: {cacheConfig?.maxSize || 'N/A'} entries</Typography>
             </Paper>
           </Box>
         </Box>
 
-        {/* Backend Status */}
+        {/* Proxy-Specific Information */}
         <Box>
           <Paper sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>
-              Backend Status
+              Proxy Details
             </Typography>
-            {backendStatus?.backends?.map((backend: BackendStatus) => (
-              <Box key={backend.host} sx={{ mb: 2 }}>
-                <Typography variant="subtitle1">{backend.host}</Typography>
-                <Typography>Status: {backend.status}</Typography>
-                <Typography>Response Time: {backend.responseTime || 'N/A'}ms</Typography>
-                <Typography>Last Check: {new Date(backend.lastCheck).toLocaleString()}</Typography>
+            <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Connection</Typography>
+                <Typography>Response Time: {selectedProxy.responseTime || 'N/A'}ms</Typography>
+                <Typography>Last Check: {selectedProxy.lastCheck ? new Date(selectedProxy.lastCheck).toLocaleString() : 'N/A'}</Typography>
               </Box>
-            ))}
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Type</Typography>
+                <Typography>Type: {selectedProxy.type}</Typography>
+                <Typography>Environment: {selectedProxy.metadata?.environment || 'N/A'}</Typography>
+              </Box>
+              {selectedProxy.metadata?.autoDiscovered && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Discovery</Typography>
+                  <Typography>Auto-discovered: Yes</Typography>
+                  <Typography>Discovered at: {selectedProxy.metadata.discoveredAt ? new Date(selectedProxy.metadata.discoveredAt).toLocaleString() : 'N/A'}</Typography>
+                </Box>
+              )}
+            </Box>
           </Paper>
         </Box>
       </Box>

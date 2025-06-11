@@ -13,6 +13,7 @@ import {
   ListItemText,
   Toolbar,
   Typography,
+  Divider,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -21,7 +22,9 @@ import {
   Monitor as MonitorIcon,
   Settings as SettingsIcon,
   Cloud as BackendIcon,
+  GroupWork as ClusterIcon,
 } from "@mui/icons-material";
+import ProxyStatus from './ProxyStatus';
 
 const drawerWidth = 240;
 
@@ -34,6 +37,7 @@ const menuItems = [
   { text: "Cache Management", icon: <CacheIcon />, path: "/cache" },
   { text: "Backend Monitoring", icon: <MonitorIcon />, path: "/monitoring" },
   { text: "Backend Configuration", icon: <BackendIcon />, path: "/backends" },
+  { text: "Cluster Management", icon: <ClusterIcon />, path: "/cluster" },
   { text: "Proxy Configuration", icon: <SettingsIcon />, path: "/config" },
 ];
 
@@ -85,9 +89,12 @@ export default function Layout({ children }: LayoutProps) {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div">
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             Proxy Stone Admin
           </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <ProxyStatus />
+          </Box>
         </Toolbar>
       </AppBar>
       <Box component="nav" sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}>

@@ -12,6 +12,9 @@ export interface BackendInstance {
     environment?: string;
     [key: string]: unknown;
   };
+  clusterRole?: 'coordinator' | 'worker' | 'unknown';
+  clusterId?: string;
+  nodeId?: string;
 }
 
 export interface BackendConfig {
@@ -20,6 +23,9 @@ export interface BackendConfig {
   mode: 'single' | 'cluster';
   autoSwitch: boolean;
   healthCheckInterval: number;
+  discoveryEnabled: boolean;
+  discoveryUrls: string[];
+  preferCoordinator: boolean;
 }
 
 const STORAGE_KEY = 'proxy-stone-backend-config';
@@ -30,7 +36,7 @@ class BackendConfigService {
 
   constructor() {
     this.config = this.loadConfig();
-    this.startHealthChecks();
+    this.startDiscoveryAndHealthChecks();
   }
 
   private loadConfig(): BackendConfig {
@@ -50,23 +56,37 @@ class BackendConfigService {
   }
 
   private getDefaultConfig(): BackendConfig {
+    // Get discovery URLs from environment or use common defaults
+    const discoveryUrls = import.meta.env.VITE_DISCOVERY_URLS?.split(',') || [
+      'http://localhost:4401',
+      'http://localhost:4402', 
+      'http://localhost:4403',
+      'http://localhost:4404',
+      'http://localhost:4405',
+    ];
+
     return {
-      activeBackendId: 'default',
+      activeBackendId: 'discovered',
       backends: [
         {
-          id: 'default',
-          name: 'Local Development',
-          url: 'http://localhost:4401',
-          type: 'single',
+          id: 'discovered',
+          name: 'Auto-discovered Backend',
+          url: 'http://localhost:4401', // Will be updated by discovery
+          type: 'cluster',
           status: 'unknown',
+          clusterRole: 'unknown',
           metadata: {
             environment: 'development',
+            autoDiscovered: true,
           },
         },
       ],
-      mode: 'single',
-      autoSwitch: false,
+      mode: 'cluster',
+      autoSwitch: true,
       healthCheckInterval: 30000, // 30 seconds
+      discoveryEnabled: true,
+      discoveryUrls,
+      preferCoordinator: true, // Prefer coordinator over workers
     };
   }
 
@@ -159,25 +179,52 @@ class BackendConfigService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch(`${backend.url}/api/health`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
+      // Check both health and cluster status
+      const [healthResponse, clusterResponse] = await Promise.allSettled([
+        fetch(`${backend.url}/api/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        }),
+        fetch(`${backend.url}/api/cluster/status`, {
+          method: 'GET',
+          signal: controller.signal,
+        }),
+      ]);
 
       clearTimeout(timeoutId);
 
       const responseTime = Date.now() - startTime;
+      let clusterInfo: any = {};
 
-      if (response.ok) {
+      // Parse cluster status if available
+      if (clusterResponse.status === 'fulfilled' && clusterResponse.value.ok) {
+        try {
+          const clusterData = await clusterResponse.value.json();
+          if (clusterData.success) {
+            clusterInfo = {
+              clusterRole: clusterData.config?.defaultRole === 'coordinator' || 
+                          clusterData.status?.coordinator ? 'coordinator' : 'worker',
+              clusterId: clusterData.config?.clusterId,
+              nodeId: clusterData.status?.nodeId,
+            };
+          }
+        } catch (error) {
+          console.warn('Failed to parse cluster status:', error);
+        }
+      }
+
+      if (healthResponse.status === 'fulfilled' && healthResponse.value.ok) {
         this.updateBackend(backend.id, {
           status: 'online',
           responseTime,
           lastCheck: Date.now(),
+          ...clusterInfo,
         });
       } else {
         this.updateBackend(backend.id, {
           status: 'offline',
           lastCheck: Date.now(),
+          ...clusterInfo,
         });
       }
     } catch {
@@ -188,28 +235,174 @@ class BackendConfigService {
     }
   }
 
-  private startHealthChecks(): void {
+  private startDiscoveryAndHealthChecks(): void {
+    // Initial discovery
+    if (this.config.discoveryEnabled) {
+      this.performDiscovery();
+    }
+
     const checkAllBackends = async () => {
       const promises = this.config.backends.map((backend) => this.checkBackendHealth(backend));
       await Promise.allSettled(promises);
 
-      // Auto-switch logic
-      if (this.config.autoSwitch && this.config.mode === 'cluster') {
-        const activeBackend = this.getActiveBackend();
-        if (activeBackend?.status === 'offline') {
-          const onlineBackend = this.config.backends.find((b) => b.status === 'online');
-          if (onlineBackend) {
-            this.setActiveBackend(onlineBackend.id);
-          }
-        }
+      // Auto-switch logic with coordinator preference
+      if (this.config.autoSwitch) {
+        await this.performAutoSwitch();
       }
     };
 
-    // Initial check
-    checkAllBackends();
+    // Initial health check
+    setTimeout(() => checkAllBackends(), 1000); // Delay to allow discovery
 
     // Periodic checks
     setInterval(checkAllBackends, this.config.healthCheckInterval);
+
+    // Periodic discovery (less frequent)
+    if (this.config.discoveryEnabled) {
+      setInterval(() => this.performDiscovery(), this.config.healthCheckInterval * 3); // Every 90 seconds
+    }
+  }
+
+  private async performDiscovery(): Promise<void> {
+    console.log('🔍 Performing backend discovery...');
+    
+    const discoveredBackends = new Map<string, BackendInstance>();
+    const discoveryPromises = this.config.discoveryUrls.map(url => this.discoverBackend(url));
+    
+    const results = await Promise.allSettled(discoveryPromises);
+    
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value) {
+        discoveredBackends.set(result.value.id, result.value);
+      }
+    });
+
+    if (discoveredBackends.size > 0) {
+      // Update backends list with discovered backends
+      const newBackends = Array.from(discoveredBackends.values());
+      this.config.backends = newBackends;
+
+      // Find the best backend to connect to
+      const coordinator = newBackends.find(b => b.clusterRole === 'coordinator' && b.status === 'online');
+      const anyOnline = newBackends.find(b => b.status === 'online');
+      
+      if (coordinator && this.config.preferCoordinator) {
+        console.log(`✅ Found coordinator: ${coordinator.url}`);
+        this.config.activeBackendId = coordinator.id;
+      } else if (anyOnline) {
+        console.log(`✅ Connected to backend: ${anyOnline.url} (${anyOnline.clusterRole || 'unknown'})`);
+        this.config.activeBackendId = anyOnline.id;
+      }
+
+      this.saveConfig();
+      this.notifyListeners();
+    } else {
+      console.warn('❌ No backends discovered');
+    }
+  }
+
+  private async discoverBackend(url: string): Promise<BackendInstance | null> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const [healthResponse, clusterResponse] = await Promise.allSettled([
+        fetch(`${url}/api/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        }),
+        fetch(`${url}/api/cluster/status`, {
+          method: 'GET',
+          signal: controller.signal,
+        }),
+      ]);
+
+      clearTimeout(timeoutId);
+
+      if (healthResponse.status === 'fulfilled' && healthResponse.value.ok) {
+        let clusterInfo: any = {
+          clusterRole: 'unknown',
+          clusterId: 'unknown',
+          nodeId: 'unknown',
+        };
+
+        // Parse cluster information
+        if (clusterResponse.status === 'fulfilled' && clusterResponse.value.ok) {
+          try {
+            const clusterData = await clusterResponse.value.json();
+            if (clusterData.success) {
+              clusterInfo = {
+                clusterRole: clusterData.config?.defaultRole === 'coordinator' || 
+                            clusterData.status?.coordinator ? 'coordinator' : 'worker',
+                clusterId: clusterData.config?.clusterId || 'unknown',
+                nodeId: clusterData.status?.nodeId || 'unknown',
+              };
+            }
+          } catch (error) {
+            console.warn(`Failed to parse cluster status for ${url}:`, error);
+          }
+        }
+
+        const backend: BackendInstance = {
+          id: `discovered-${clusterInfo.nodeId || Date.now()}`,
+          name: `${clusterInfo.clusterRole === 'coordinator' ? 'Coordinator' : 'Worker'} (${url})`,
+          url,
+          type: 'cluster',
+          status: 'online',
+          lastCheck: Date.now(),
+          ...clusterInfo,
+          metadata: {
+            environment: 'discovered',
+            autoDiscovered: true,
+            discoveredAt: new Date().toISOString(),
+          },
+        };
+
+        console.log(`🔍 Discovered: ${url} (${clusterInfo.clusterRole})`);
+        return backend;
+      }
+    } catch (error) {
+      // Silent fail for discovery - this is expected when backends are down
+    }
+    
+    return null;
+  }
+
+  private async performAutoSwitch(): Promise<void> {
+    if (!this.config.autoSwitch) return;
+
+    const activeBackend = this.getActiveBackend();
+    
+    // If current backend is offline or we prefer coordinator
+    if (activeBackend?.status === 'offline' || 
+        (this.config.preferCoordinator && activeBackend?.clusterRole !== 'coordinator')) {
+      
+      // Find the best alternative
+      let bestBackend: BackendInstance | undefined;
+      
+      if (this.config.preferCoordinator) {
+        // First, try to find an online coordinator
+        bestBackend = this.config.backends.find(b => 
+          b.clusterRole === 'coordinator' && b.status === 'online'
+        );
+      }
+      
+      // If no coordinator found, use any online backend
+      if (!bestBackend) {
+        bestBackend = this.config.backends.find(b => b.status === 'online');
+      }
+      
+      if (bestBackend && bestBackend.id !== this.config.activeBackendId) {
+        console.log(`🔄 Auto-switching to: ${bestBackend.url} (${bestBackend.clusterRole})`);
+        this.setActiveBackend(bestBackend.id);
+      }
+    }
+  }
+
+  public async triggerDiscovery(): Promise<void> {
+    if (this.config.discoveryEnabled) {
+      await this.performDiscovery();
+    }
   }
 
   public async testConnection(

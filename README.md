@@ -28,6 +28,23 @@ proxy-stone/
 └── tsconfig.base.json          # Shared TypeScript config
 ```
 
+## ✨ Features
+
+### Multi-Proxy Cluster Management
+- **Distributed Architecture**: Coordinator/worker pattern with automatic node discovery
+- **Smart UI Interface**: Table-based proxy selector with real-time status monitoring
+- **Proxy-Aware Operations**: All management operations route to selected proxy backend
+- **Automatic Failover**: Health monitoring with automatic backend discovery and switching
+- **Load Distribution**: Multiple worker nodes for horizontal scaling
+
+### Core Capabilities
+- **High-Performance Proxy**: Built on Fastify for maximum throughput
+- **Intelligent Caching**: Multi-layer caching with Redis and file-based storage
+- **Real-Time Monitoring**: Comprehensive metrics, analytics, and health checks
+- **Admin Interface**: React-based UI for complete system management
+- **Database Flexibility**: Support for SQLite, MySQL, and PostgreSQL
+- **Container Ready**: Full Docker support with multiple deployment profiles
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -53,10 +70,20 @@ npm run build
 ### Development
 
 ```bash
-# Start all services in development mode
-npm run dev
+# Quick start options (recommended)
+npm run web              # Single backend (4401) + UI (4400)
+npm run web:cluster      # Full cluster: Coordinator + 2 Workers + UI
 
-# Start specific services
+# Traditional development
+npm run dev              # Start all services with turbo
+
+# Manual cluster setup
+npm run web:coordinator  # Start coordinator backend (4401)
+npm run web:worker1      # Start worker backend (4402) 
+npm run web:worker2      # Start worker backend (4403)
+npm run web:ui           # Start UI (4400)
+
+# Individual services
 cd apps/backend && npm run dev
 cd apps/ui && npm run dev
 ```
@@ -104,8 +131,19 @@ npm run docker:clean
 ### Scripts
 
 ```bash
-# Development
-npm run dev              # Start all services in dev mode
+# Quick Development (Recommended)
+npm run web              # Single backend + UI
+npm run web:cluster      # Full cluster setup (coordinator + 2 workers + UI)
+npm run web:backend      # Backend only
+npm run web:ui           # UI only
+
+# Individual cluster components
+npm run web:coordinator  # Start coordinator (port 4401)
+npm run web:worker1      # Start worker 1 (port 4402)
+npm run web:worker2      # Start worker 2 (port 4403)
+
+# Traditional development
+npm run dev              # Start all services with turbo
 npm run build            # Build all packages
 npm run test             # Run tests across all packages
 npm run lint             # Lint all packages
@@ -141,20 +179,81 @@ Use workspace references for internal packages:
 }
 ```
 
+## 🌐 Cluster Architecture
+
+### Overview
+Proxy Stone supports distributed deployments with a coordinator/worker architecture:
+
+- **Coordinator**: First backend instance that manages cluster state
+- **Workers**: Additional backend instances that register with the coordinator
+- **Auto-Discovery**: UI automatically discovers and connects to available backends
+- **Load Distribution**: Requests distributed across healthy worker nodes
+
+### Deployment Models
+
+#### Single Instance
+```bash
+npm run web  # Coordinator (4401) + UI (4400)
+```
+
+#### Multi-Node Cluster
+```bash
+npm run web:cluster  # Coordinator + 2 Workers + UI
+# Coordinator: localhost:4401
+# Worker 1:    localhost:4402
+# Worker 2:    localhost:4403
+# UI:          localhost:4400
+```
+
+#### Custom Configuration
+```bash
+# Start coordinator
+cd apps/backend && ./start-backend.sh --port 4401
+
+# Add workers
+cd apps/backend && ./start-backend.sh --port 4402 --cluster-ip localhost:4401
+cd apps/backend && ./start-backend.sh --port 4403 --cluster-ip localhost:4401
+
+# Start UI (auto-discovers backends)
+cd apps/ui && npm run dev
+```
+
+### UI Multi-Proxy Management
+
+The UI provides a sophisticated multi-proxy management interface:
+
+1. **Automatic Discovery**: Scans ports 4401-4405 for available backends
+2. **Proxy Selection**: Table-based interface showing all discovered proxies
+3. **Real-Time Status**: Connection monitoring with health indicators
+4. **Role Identification**: Visual distinction between coordinator and workers
+5. **Proxy-Aware Operations**: All management actions route to selected backend
+
+### Cluster API
+
+Key endpoints for cluster management:
+
+- `POST /api/cluster/register` - Node registration
+- `POST /api/cluster/heartbeat/{nodeId}` - Health updates
+- `GET /api/cluster/nodes` - List all nodes
+- `GET /api/cluster/status` - Cluster status
+- `POST /api/cluster/enable-serving` - Enable proxy serving
+- `POST /api/cluster/disable-serving` - Maintenance mode
+
 ## 🐳 Docker
 
 ### Services
 
 | Service         | Port | Description                  |
 | --------------- | ---- | ---------------------------- |
-| Proxy Backend   | 4000 | Main proxy service           |
-| UI              | 3000 | React admin panel            |
+| Proxy Backend   | 4401 | Main proxy service (coordinator) |
+| Worker Backends | 4402-4405 | Additional proxy instances (workers) |
+| UI              | 4400 | React admin panel            |
 | Redis           | 6379 | Cache store                  |
 | Redis Commander | 8081 | Redis web UI                 |
 | MySQL           | 3306 | Database (MySQL config)      |
 | Adminer         | 8080 | Database web UI (MySQL)      |
-| PostgreSQL      | 5432 | Database (PostgreSQL config) |
-| pgAdmin         | 5050 | Database web UI (PostgreSQL) |
+| PostgreSQL      | 5434 | Database (PostgreSQL config) |
+| pgAdmin         | 5051 | Database web UI (PostgreSQL) |
 
 ### Configuration Files
 

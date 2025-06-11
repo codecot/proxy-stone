@@ -335,6 +335,15 @@ const cliApiKeys = getArgValue("api-keys");
 const cliJwtSecret = getArgValue("jwt-secret");
 const cliAuthProtectedPaths = getArgValue("auth-protected-paths");
 
+// Cluster configuration
+const cliClusterEnabled = getBooleanFlag("enable-cluster");
+const cliClusterIp = getArgValue("cluster-ip");
+const cliClusterPort = getArgValue("cluster-port");
+const cliClusterId = getArgValue("cluster-id");
+const cliNodeId = getArgValue("node-id");
+const cliClusterHeartbeat = getArgValue("cluster-heartbeat");
+const cliClusterTimeout = getArgValue("cluster-timeout");
+
 // Database configuration
 const databaseConfig = createDatabaseConfig();
 
@@ -469,4 +478,20 @@ export const config: ServerConfig = {
 
     return config;
   })(),
+  // Cluster configuration
+  cluster: {
+    enabled: cliClusterEnabled || process.env.ENABLE_CLUSTER !== "false", // Default enabled
+    clusterId: cliClusterId || process.env.CLUSTER_ID || "default-cluster",
+    nodeId: cliNodeId || process.env.NODE_ID, // Auto-generated if not provided
+    coordinatorUrl: cliClusterIp ? 
+      `http://${cliClusterIp}${cliClusterPort ? `:${cliClusterPort}` : ''}` : 
+      process.env.CLUSTER_COORDINATOR_URL,
+    heartbeatInterval: Number(cliClusterHeartbeat || process.env.CLUSTER_HEARTBEAT_INTERVAL) || 30,
+    nodeTimeout: Number(cliClusterTimeout || process.env.CLUSTER_NODE_TIMEOUT) || 60,
+    healthCheckInterval: 10,
+    autoRegister: true,
+    defaultRole: "worker" as const,
+    tags: [],
+    storage: { type: "memory" as const },
+  },
 };

@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
-import { randomUUID } from "crypto";
-import { NodeStatus, NodeRole, ClusterConfig } from "./types.js";
+import { EnhancedClusterService } from "./enhanced-service.js";
+import { ClusterConfig } from "./types.js";
+import { clusterRoutes } from "./routes.js";
 
 // Simple working cluster service
 class WorkingClusterService {
@@ -384,137 +385,36 @@ class WorkingClusterService {
 
 export const registerCluster = async (fastify: FastifyInstance) => {
   // Get cluster configuration from server config, with defaults
-  const clusterConfig = fastify.config.cluster || {};
+  const clusterConfig: ClusterConfig = fastify.config.cluster || {
+    enabled: true,
+    clusterId: "default-cluster",
+    heartbeatInterval: 30,
+    nodeTimeout: 60,
+    healthCheckInterval: 10,
+    autoRegister: true,
+    defaultRole: "worker" as const,
+    tags: [],
+    storage: { type: "memory" as const },
+  };
 
-  // Only initialize cluster service if enabled (default to enabled if not specified)
-  if ("enabled" in clusterConfig && clusterConfig.enabled === false) {
+  // Only initialize cluster service if enabled
+  if (!clusterConfig.enabled) {
     fastify.log.info("Cluster service is disabled");
     return;
   }
 
   try {
-    // Construct the node URL from fastify configuration
-    const protocol = "http"; // Default to http since https is not in ServerConfig
-    const host =
-      fastify.config.host === "0.0.0.0" ? "localhost" : fastify.config.host;
-    const port = fastify.config.port;
-    const nodeUrl = `${protocol}://${host}:${port}`;
-
-    // Initialize working cluster service
-    const clusterService = new WorkingClusterService(clusterConfig, nodeUrl);
+    // Initialize enhanced cluster service
+    const clusterService = new EnhancedClusterService(fastify, clusterConfig);
     await clusterService.initialize();
 
     // Decorate fastify instance with cluster service
     fastify.decorate("cluster", clusterService);
 
-    // Register basic cluster routes
-    await fastify.register(async (fastify: FastifyInstance) => {
-      fastify.get("/cluster/status", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
+    // Basic routes are now handled by the detailed cluster routes
 
-        const status = await fastify.cluster.getCurrentNodeStatus();
-        const config = fastify.cluster.getConfig();
-        const serviceStatus = fastify.cluster.getServiceStatus();
-
-        return reply.send({
-          success: true,
-          status,
-          config,
-          serviceStatus,
-        });
-      });
-
-      fastify.get("/cluster/nodes", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
-
-        const nodes = await fastify.cluster.getAllNodes();
-        return reply.send({
-          success: true,
-          nodes,
-          total: nodes.length,
-        });
-      });
-
-      fastify.get("/cluster/health", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
-
-        const health = await fastify.cluster.getClusterHealth();
-        return reply.send({
-          success: true,
-          health,
-        });
-      });
-
-      // New serving control endpoints
-      fastify.post("/cluster/enable-serving", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
-
-        await fastify.cluster.enableServing();
-        const status = fastify.cluster.getServiceStatus();
-
-        return reply.send({
-          success: true,
-          message: "Cluster serving enabled",
-          status,
-        });
-      });
-
-      fastify.post("/cluster/disable-serving", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
-
-        await fastify.cluster.disableServing();
-        const status = fastify.cluster.getServiceStatus();
-
-        return reply.send({
-          success: true,
-          message: "Cluster serving disabled (maintenance mode)",
-          status,
-        });
-      });
-
-      fastify.get("/cluster/service-status", async (request, reply) => {
-        if (!fastify.cluster) {
-          return reply.status(503).send({
-            error: "Service Unavailable",
-            message: "Cluster service is not enabled",
-          });
-        }
-
-        const status = fastify.cluster.getServiceStatus();
-        const nodeStatus = await fastify.cluster.getCurrentNodeStatus();
-
-        return reply.send({
-          success: true,
-          status,
-          nodeStatus,
-        });
-      });
-    });
+    // Register detailed cluster routes (including /register endpoint)
+    await fastify.register(clusterRoutes, { prefix: "/cluster" });
 
     // Setup graceful shutdown
     fastify.addHook("onClose", async () => {
@@ -526,7 +426,7 @@ export const registerCluster = async (fastify: FastifyInstance) => {
     });
 
     fastify.log.info(
-      `Cluster service initialized with ID: ${clusterService.getConfig().clusterId}`
+      `Cluster service initialized with ID: ${clusterService.getConfig().clusterId} (${clusterService.isClusterCoordinator() ? 'coordinator' : 'worker'})`
     );
   } catch (error) {
     fastify.log.error("Failed to initialize cluster service:", error);

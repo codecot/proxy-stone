@@ -32,6 +32,9 @@ import {
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   HelpOutline as HelpIcon,
+  Search as DiscoveryIcon,
+  Star as CoordinatorIcon,
+  Work as WorkerIcon,
 } from '@mui/icons-material';
 import {
   backendConfigService,
@@ -196,6 +199,7 @@ export default function BackendConfig() {
   const [config, setConfig] = useState<BackendConfig>(backendConfigService.getConfig());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingBackend, setEditingBackend] = useState<BackendInstance | undefined>();
+  const [discovering, setDiscovering] = useState(false);
 
   useEffect(() => {
     const unsubscribe = backendConfigService.subscribe(setConfig);
@@ -238,6 +242,17 @@ export default function BackendConfig() {
     backendConfigService.setAutoSwitch(autoSwitch);
   };
 
+  const handleTriggerDiscovery = async () => {
+    setDiscovering(true);
+    try {
+      await backendConfigService.triggerDiscovery();
+    } catch (error) {
+      console.error('Discovery failed:', error);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'online':
@@ -260,6 +275,28 @@ export default function BackendConfig() {
     }
   };
 
+  const getClusterRoleIcon = (role?: string) => {
+    switch (role) {
+      case 'coordinator':
+        return <CoordinatorIcon color="primary" />;
+      case 'worker':
+        return <WorkerIcon color="secondary" />;
+      default:
+        return <HelpIcon color="disabled" />;
+    }
+  };
+
+  const getClusterRoleColor = (role?: string) => {
+    switch (role) {
+      case 'coordinator':
+        return 'primary';
+      case 'worker':
+        return 'secondary';
+      default:
+        return 'default';
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -275,6 +312,50 @@ export default function BackendConfig() {
           Add Backend
         </Button>
       </Box>
+
+      {/* Discovery Status */}
+      {config.discoveryEnabled && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <DiscoveryIcon color="primary" />
+            <Typography variant="h6">
+              Smart Discovery
+            </Typography>
+            <Chip 
+              label={config.discoveryEnabled ? 'Enabled' : 'Disabled'} 
+              color={config.discoveryEnabled ? 'success' : 'default'}
+              size="small" 
+            />
+          </Box>
+          
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Automatically discovering backends at: {config.discoveryUrls?.join(', ')}
+          </Typography>
+          
+          <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
+            <Chip 
+              icon={config.preferCoordinator ? <CoordinatorIcon /> : <WorkerIcon />}
+              label={config.preferCoordinator ? 'Prefers Coordinator' : 'Any Backend'} 
+              color={config.preferCoordinator ? 'primary' : 'secondary'}
+              size="small" 
+            />
+            <Chip 
+              label={config.autoSwitch ? 'Auto-Switch Enabled' : 'Manual Switch'} 
+              color={config.autoSwitch ? 'success' : 'default'}
+              size="small" 
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={discovering ? <CircularProgress size={16} /> : <RefreshIcon />}
+              onClick={handleTriggerDiscovery}
+              disabled={discovering}
+            >
+              {discovering ? 'Discovering...' : 'Discover Now'}
+            </Button>
+          </Box>
+        </Paper>
+      )}
 
       {/* Configuration Settings */}
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -317,7 +398,7 @@ export default function BackendConfig() {
             development or simple deployments.
             <br />
             <strong>Cluster Mode:</strong> Manage multiple backend instances with automatic failover
-            capabilities.
+            capabilities. Smart discovery will automatically find and connect to the cluster coordinator.
           </Typography>
         </Alert>
       </Paper>
@@ -345,9 +426,22 @@ export default function BackendConfig() {
                     mb: 2,
                   }}
                 >
-                  <Typography variant="h6" component="div">
-                    {backend.name}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="h6" component="div">
+                      {backend.name}
+                    </Typography>
+                    {backend.clusterRole && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {getClusterRoleIcon(backend.clusterRole)}
+                        <Chip
+                          label={backend.clusterRole}
+                          color={getClusterRoleColor(backend.clusterRole) as any}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </Box>
+                    )}
+                  </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     {getStatusIcon(backend.status)}
                     <Chip
@@ -362,13 +456,22 @@ export default function BackendConfig() {
                   {backend.url}
                 </Typography>
 
-                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
                   <Chip label={backend.type} size="small" variant="outlined" />
+                  {backend.clusterId && (
+                    <Chip label={`Cluster: ${backend.clusterId}`} size="small" variant="outlined" color="primary" />
+                  )}
+                  {backend.nodeId && (
+                    <Chip label={`Node: ${backend.nodeId.substring(0, 8)}...`} size="small" variant="outlined" />
+                  )}
                   {backend.metadata?.environment && (
                     <Chip label={backend.metadata.environment} size="small" variant="outlined" />
                   )}
                   {backend.metadata?.region && (
                     <Chip label={backend.metadata.region} size="small" variant="outlined" />
+                  )}
+                  {backend.metadata?.autoDiscovered && (
+                    <Chip label="Auto-discovered" size="small" variant="outlined" color="success" />
                   )}
                 </Box>
 
