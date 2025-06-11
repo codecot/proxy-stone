@@ -11,9 +11,9 @@
 
 ## Backend Server
 - **Framework**: Fastify with TypeScript
-- **Default Port**: Configurable via `--port` parameter
+- **Default Port**: 4401 (configurable via `--port` parameter)
 - **Host**: Configurable via `--host` parameter (default: 0.0.0.0)
-- **Dev Command**: `npm run dev -- --port 3000 --db-type postgresql --db-host localhost --db-port 5434 --db-name proxy_stone --db-user proxy_user --db-password proxy_pass`
+- **Dev Command**: `npm run dev -- --port 4401 --db-type postgresql --db-host localhost --db-port 5434 --db-name proxy_stone --db-user proxy_user --db-password proxy_pass`
 
 ## API Endpoint Routing
 - **Direct Endpoints** (no proxy): 
@@ -44,11 +44,28 @@
 cd docker && docker-compose --profile postgres up -d postgres pgadmin
 
 # Start backend with PostgreSQL
-cd apps/backend && npm run dev -- --port 3000 --db-type postgresql --db-host localhost --db-port 5434 --db-name proxy_stone --db-user proxy_user --db-password proxy_pass
+cd apps/backend && npm run dev:postgres  # Uses port 4401
+# Or manually:
+cd apps/backend && npm run dev -- --port 4401 --db-type postgresql --db-host localhost --db-port 5434 --db-name proxy_stone --db-user proxy_user --db-password proxy_pass
+
+# Start UI
+cd apps/ui && npm run dev  # Uses port 4400
 
 # Check Docker services
 cd docker && docker-compose ps
 ```
+
+## UI Management Features
+- **Dashboard & Overview**: Real-time system health, metrics, activity feed
+- **Proxy Configuration**: Target URL management, endpoint mapping, load balancing
+- **Cache Management**: Cache rules editor, statistics, invalidation, Redis integration
+- **Authentication & Security**: API key management, user management, JWT configuration
+- **Monitoring & Analytics**: Request analytics, performance metrics, log viewer
+- **Database Management**: Connection settings, query interface, schema browser
+- **Cluster Management**: Node discovery, load distribution, failover configuration
+- **API Documentation Hub**: Interactive API explorer, OpenAPI viewer
+- **Configuration Management**: Environment variables, feature flags, import/export
+- **Development Tools**: Request debugger, performance profiler, mock server
 
 ## Development Principles
 - Always use descriptive names
@@ -67,3 +84,14 @@ cd docker && docker-compose ps
   - Protect sensitive routes
   - Enhance security for API endpoints
   ```
+
+## UI Server
+- **Framework**: React + Vite
+- **Default Port**: 4400
+- **Backend API**: Connects to http://localhost:4401
+
+## UI Feature List
+- To be determined
+
+## Memory Notes
+- `save to memory` - Placeholder memory entry without specific details

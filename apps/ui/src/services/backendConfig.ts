@@ -56,7 +56,7 @@ class BackendConfigService {
         {
           id: 'default',
           name: 'Local Development',
-          url: 'http://localhost:4000',
+          url: 'http://localhost:4401',
           type: 'single',
           status: 'unknown',
           metadata: {

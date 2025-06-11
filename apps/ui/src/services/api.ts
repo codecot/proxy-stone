@@ -15,7 +15,7 @@ api.interceptors.request.use((config) => {
     config.baseURL = `${activeBackend.url}/api`;
     console.log(`Using API base URL: ${config.baseURL}`);
   } else {
-    config.baseURL = 'http://localhost:4000/api'; // fallback
+    config.baseURL = 'http://localhost:4401/api'; // fallback
     console.log(`Using fallback API base URL: ${config.baseURL}`);
   }
   return config;
